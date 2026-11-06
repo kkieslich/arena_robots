@@ -11,12 +11,13 @@ from arena_rclpy_mixins.spin import spin_node
 from arena_robots_msgs.msg import Energy, Power
 from rclpy.node import Node
 from rclpy.parameter import Parameter
-from rclpy.qos import QoSProfile, ReliabilityPolicy
+from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64
 
 
 class PowerPublisher(Node):
-    """Instantaneous power and integrated energy from joint effort and velocity."""
+    """Instantaneous power and integrated energy from joint effort and velocity, battery charge refilled by `~/charge_power` in W."""
 
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("power_publisher", parameter_overrides=parameter_overrides)
@@ -45,6 +46,8 @@ class PowerPublisher(Node):
         self._filtered_therm_w: float = 0.0
         self._last_time: float | None = None
         self._total_energy_consumed_wh: float = 0.0
+        self._stored_energy_wh: float = self._battery_capacity_wh
+        self._charge_power_w: float = 0.0
         self._warned_empty_effort: bool = False
 
         qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
@@ -52,6 +55,7 @@ class PowerPublisher(Node):
         self._energy_pub: LazyPublisher[Energy] = LazyPublisher(self.create_publisher(Energy, "~/energy", qos))
 
         self.create_subscription(JointState, "joint_states", self._on_joint_state, qos)
+        self.create_subscription(Float64, "~/charge_power", self._on_charge_power, QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL))
 
         self.get_logger().info(
             f"PowerPublisher ready: static={self._static_power_w:.1f} W, "
@@ -60,6 +64,9 @@ class PowerPublisher(Node):
             f"battery={self._battery_capacity_wh} Wh, "
             f"losses(b={self._drivetrain_damping}, tau_f={self._drivetrain_friction}, tau_roll={self._tau_roll_per_wheel:.4f} Nm)"
         )
+
+    def _on_charge_power(self, msg: Float64) -> None:
+        self._charge_power_w = msg.data
 
     def _on_joint_state(self, msg: JointState) -> None:
         stamp = msg.header.stamp
@@ -125,6 +132,7 @@ class PowerPublisher(Node):
             dt = current_time - self._last_time
             if dt > 0.0:
                 self._total_energy_consumed_wh += (total_power * dt) / 3600.0
+                self._stored_energy_wh = min(max(self._stored_energy_wh + ((self._charge_power_w - total_power) * dt) / 3600.0, 0.0), self._battery_capacity_wh)
         self._last_time = current_time
 
         def power() -> Power:
@@ -142,7 +150,7 @@ class PowerPublisher(Node):
 
         def energy() -> Energy:
             if self._battery_capacity_wh > 0.0:
-                soc = max(0.0, (1.0 - self._total_energy_consumed_wh / self._battery_capacity_wh) * 100.0)
+                soc = self._stored_energy_wh / self._battery_capacity_wh * 100.0
             else:
                 soc = 0.0
             energy_msg = Energy()
