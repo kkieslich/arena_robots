@@ -225,3 +225,22 @@ def test_charging_stops_at_the_battery_capacity() -> None:
         assert node._stored_energy_wh == pytest.approx(9.0)
     finally:
         node.destroy_node()
+
+
+def test_a_state_of_charge_setpoint_sets_the_battery_and_leaves_the_consumed_energy_alone() -> None:
+    node = _idle_node()
+    try:
+        node._on_joint_state(_idle(0))
+        node._on_joint_state(_idle(100))
+        node._on_soc_percent(Float64(data=40.0))
+        assert node._stored_energy_wh == pytest.approx(4.0)
+        assert node._total_energy_consumed_wh == pytest.approx(1.0)
+
+        node._on_joint_state(_idle(200))
+        assert node._stored_energy_wh == pytest.approx(3.0)
+        assert node._total_energy_consumed_wh == pytest.approx(2.0)
+
+        node._on_soc_percent(Float64(data=150.0))
+        assert node._stored_energy_wh == 10.0
+    finally:
+        node.destroy_node()

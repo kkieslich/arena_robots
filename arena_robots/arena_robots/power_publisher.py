@@ -17,7 +17,7 @@ from std_msgs.msg import Float64
 
 
 class PowerPublisher(Node):
-    """Instantaneous power and integrated energy from joint effort and velocity, battery charge refilled by `~/charge_power` in W."""
+    """Instantaneous power and integrated energy from joint effort and velocity, battery charge set by `~/soc_percent` and refilled by `~/charge_power` in W."""
 
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("power_publisher", parameter_overrides=parameter_overrides)
@@ -55,7 +55,9 @@ class PowerPublisher(Node):
         self._energy_pub: LazyPublisher[Energy] = LazyPublisher(self.create_publisher(Energy, "~/energy", qos))
 
         self.create_subscription(JointState, "joint_states", self._on_joint_state, qos)
-        self.create_subscription(Float64, "~/charge_power", self._on_charge_power, QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL))
+        latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+        self.create_subscription(Float64, "~/charge_power", self._on_charge_power, latched)
+        self.create_subscription(Float64, "~/soc_percent", self._on_soc_percent, latched)
 
         self.get_logger().info(
             f"PowerPublisher ready: static={self._static_power_w:.1f} W, "
@@ -67,6 +69,9 @@ class PowerPublisher(Node):
 
     def _on_charge_power(self, msg: Float64) -> None:
         self._charge_power_w = msg.data
+
+    def _on_soc_percent(self, msg: Float64) -> None:
+        self._stored_energy_wh = min(max(msg.data / 100.0 * self._battery_capacity_wh, 0.0), self._battery_capacity_wh)
 
     def _on_joint_state(self, msg: JointState) -> None:
         stamp = msg.header.stamp
