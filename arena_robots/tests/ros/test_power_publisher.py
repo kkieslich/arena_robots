@@ -4,9 +4,15 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+import pytest
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import JointState
+from std_msgs.msg import Float64
+
+if TYPE_CHECKING:
+    from arena_robots.power_publisher import PowerPublisher
 
 
 def test_power_publisher_initialization() -> None:
@@ -153,5 +159,88 @@ def test_power_publisher_with_drivetrain_and_rolling_losses() -> None:
 
         expected_energy = 13.87796888 / 3600.0
         assert abs(node._total_energy_consumed_wh - expected_energy) < 1e-4
+    finally:
+        node.destroy_node()
+
+
+def _idle(sec: int) -> JointState:
+    msg = JointState()
+    msg.header.stamp.sec = sec
+    msg.name = ["wheel_l", "wheel_r"]
+    msg.velocity = [0.0, 0.0]
+    msg.effort = [0.0, 0.0]
+    return msg
+
+
+def _idle_node() -> PowerPublisher:
+    from arena_robots.power_publisher import PowerPublisher
+
+    # 36 W draw on a 10 Wh battery: 100 s idle uses 1 Wh, 10 s at 360 W puts back 0.9 Wh net
+    return PowerPublisher(
+        parameter_overrides=[
+            Parameter("static_power_w", value=36.0),
+            Parameter("battery_capacity_wh", value=10.0),
+            Parameter("filter_tau_s", value=0.0),
+        ]
+    )
+
+
+def test_charging_refills_the_battery_and_leaves_the_consumed_energy_alone() -> None:
+    charged = _idle_node()
+    idle = _idle_node()
+    try:
+        for node in (charged, idle):
+            node._on_joint_state(_idle(0))
+            node._on_joint_state(_idle(100))
+        assert charged._stored_energy_wh == pytest.approx(9.0)
+
+        charged._on_charge_power(Float64(data=360.0))
+        for node in (charged, idle):
+            node._on_joint_state(_idle(110))
+        assert charged._stored_energy_wh == pytest.approx(9.9)
+        assert idle._stored_energy_wh == pytest.approx(8.9)
+        assert charged._total_energy_consumed_wh == pytest.approx(1.1)
+        assert charged._total_energy_consumed_wh == idle._total_energy_consumed_wh
+
+        charged._on_charge_power(Float64(data=0.0))
+        charged._on_joint_state(_idle(210))
+        assert charged._stored_energy_wh == pytest.approx(8.9)
+    finally:
+        charged.destroy_node()
+        idle.destroy_node()
+
+
+def test_charging_stops_at_the_battery_capacity() -> None:
+    node = _idle_node()
+    try:
+        node._on_joint_state(_idle(0))
+        node._on_joint_state(_idle(100))
+        node._on_charge_power(Float64(data=360.0))
+        node._on_joint_state(_idle(1000))
+        assert node._stored_energy_wh == 10.0
+        assert node._total_energy_consumed_wh == pytest.approx(10.0)
+
+        node._on_charge_power(Float64(data=0.0))
+        node._on_joint_state(_idle(1100))
+        assert node._stored_energy_wh == pytest.approx(9.0)
+    finally:
+        node.destroy_node()
+
+
+def test_a_state_of_charge_setpoint_sets_the_battery_and_leaves_the_consumed_energy_alone() -> None:
+    node = _idle_node()
+    try:
+        node._on_joint_state(_idle(0))
+        node._on_joint_state(_idle(100))
+        node._on_soc_percent(Float64(data=40.0))
+        assert node._stored_energy_wh == pytest.approx(4.0)
+        assert node._total_energy_consumed_wh == pytest.approx(1.0)
+
+        node._on_joint_state(_idle(200))
+        assert node._stored_energy_wh == pytest.approx(3.0)
+        assert node._total_energy_consumed_wh == pytest.approx(2.0)
+
+        node._on_soc_percent(Float64(data=150.0))
+        assert node._stored_energy_wh == 10.0
     finally:
         node.destroy_node()
