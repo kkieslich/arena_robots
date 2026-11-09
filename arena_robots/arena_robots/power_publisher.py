@@ -9,15 +9,24 @@ import rclpy
 from arena_rclpy_mixins.lazy import LazyPublisher
 from arena_rclpy_mixins.spin import spin_node
 from arena_robots_msgs.msg import Energy, Power
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
+#: odometry older than this, against the joint state's stamp, counts as standing still
+ODOM_MAX_AGE_S = 1.0
+
 
 class PowerPublisher(Node):
-    """Instantaneous power and integrated energy from joint effort and velocity, battery charge set by `~/soc_percent` and refilled by `~/charge_power` in W."""
+    """Instantaneous power and integrated energy from joint effort and velocity, battery charge set by `~/soc_percent` and refilled by `~/charge_power` in W.
+
+    A joint state with neither velocity nor effort (flatsim) has no drive power of its own: then the driving power is
+    estimated from `odom` as `odometry_linear_w_per_mps * |v| + odometry_angular_w_per_radps * |omega|`, in electrical W,
+    when either coefficient is above 0. A joint state with velocity or effort never gets the estimate, so nothing counts twice.
+    """
 
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("power_publisher", parameter_overrides=parameter_overrides)
@@ -37,6 +46,12 @@ class PowerPublisher(Node):
         self._wheel_radius_m: float = float(typing.cast(float, self.declare_parameter("wheel_radius_m", 0.0).value))
         self._num_wheels: int = int(typing.cast(int, self.declare_parameter("num_wheels", 1).value))
 
+        # Driving power estimated from odometry, only for joint states without velocity and effort
+        self._odom_linear_w_per_mps: float = float(typing.cast(float, self.declare_parameter("odometry_linear_w_per_mps", 0.0).value))
+        self._odom_angular_w_per_radps: float = float(typing.cast(float, self.declare_parameter("odometry_angular_w_per_radps", 0.0).value))
+        self._estimates_from_odometry: bool = self._odom_linear_w_per_mps > 0.0 or self._odom_angular_w_per_radps > 0.0
+        self._odom: tuple[float, float, float] | None = None  # stamp in s, |v| in m/s, |omega| in rad/s
+
         if self._num_wheels > 0 and self._robot_mass_kg > 0.0 and self._wheel_radius_m > 0.0:
             self._tau_roll_per_wheel: float = (self._rolling_resistance_crr * self._robot_mass_kg * 9.81 * self._wheel_radius_m) / float(self._num_wheels)
         else:
@@ -55,6 +70,8 @@ class PowerPublisher(Node):
         self._energy_pub: LazyPublisher[Energy] = LazyPublisher(self.create_publisher(Energy, "~/energy", qos))
 
         self.create_subscription(JointState, "joint_states", self._on_joint_state, qos)
+        if self._estimates_from_odometry:
+            self.create_subscription(Odometry, "odom", self._on_odom, qos)
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Float64, "~/charge_power", self._on_charge_power, latched)
         self.create_subscription(Float64, "~/soc_percent", self._on_soc_percent, latched)
@@ -64,7 +81,8 @@ class PowerPublisher(Node):
             f"efficiency={self._efficiency}, c_h={self._heating_coeff}, "
             f"tau_max={self._max_torque_nm:.1f} Nm, filter_tau={self._filter_tau_s:.3f} s, "
             f"battery={self._battery_capacity_wh} Wh, "
-            f"losses(b={self._drivetrain_damping}, tau_f={self._drivetrain_friction}, tau_roll={self._tau_roll_per_wheel:.4f} Nm)"
+            f"losses(b={self._drivetrain_damping}, tau_f={self._drivetrain_friction}, tau_roll={self._tau_roll_per_wheel:.4f} Nm), "
+            f"odometry estimate={self._odom_linear_w_per_mps} W per m/s, {self._odom_angular_w_per_radps} W per rad/s"
         )
 
     def _on_charge_power(self, msg: Float64) -> None:
@@ -72,6 +90,20 @@ class PowerPublisher(Node):
 
     def _on_soc_percent(self, msg: Float64) -> None:
         self._stored_energy_wh = min(max(msg.data / 100.0 * self._battery_capacity_wh, 0.0), self._battery_capacity_wh)
+
+    def _on_odom(self, msg: Odometry) -> None:
+        stamp = msg.header.stamp
+        twist = msg.twist.twist
+        self._odom = (stamp.sec + stamp.nanosec * 1e-9, math.hypot(twist.linear.x, twist.linear.y), abs(twist.angular.z))
+
+    def _odometry_drive_power_w(self, now: float) -> float:
+        """Electrical driving power from the latest odometry, 0 without odometry within ODOM_MAX_AGE_S of `now`."""
+        if self._odom is None:
+            return 0.0
+        stamp, speed, turn = self._odom
+        if abs(now - stamp) > ODOM_MAX_AGE_S:
+            return 0.0
+        return self._odom_linear_w_per_mps * speed + self._odom_angular_w_per_radps * turn
 
     def _on_joint_state(self, msg: JointState) -> None:
         stamp = msg.header.stamp
@@ -81,8 +113,13 @@ class PowerPublisher(Node):
         has_effort = len(msg.effort) > 0
         has_velocity = len(msg.velocity) > 0
 
+        estimated = not has_effort and not has_velocity and self._estimates_from_odometry
+
         if not has_effort and not self._warned_empty_effort:
-            self.get_logger().warning("JointState carries no effort, mechanical and thermal power stay zero until it is published.")
+            if estimated:
+                self.get_logger().warning("JointState carries no velocity or effort, the driving power is estimated from odometry.")
+            else:
+                self.get_logger().warning("JointState carries no effort, mechanical and thermal power stay zero until it is published.")
             self._warned_empty_effort = True
 
         joint_names: list[str] = []
@@ -116,7 +153,7 @@ class PowerPublisher(Node):
             joint_therm.append(p_therm)
             joint_total.append(p_mech + p_therm)
 
-        total_mech_raw = math.fsum(joint_mech)
+        total_mech_raw = math.fsum(joint_mech) + (self._odometry_drive_power_w(current_time) if estimated else 0.0)
         total_therm_raw = math.fsum(joint_therm)
 
         # 125ms EMA low-pass filtering (conserves total energy while spreading transient impulses)
