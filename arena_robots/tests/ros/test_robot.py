@@ -352,6 +352,38 @@ class TestRobotView:
         assert profile["robot_mass_kg"] == 17.0
         assert profile["wheel_radius_m"] == 0.098
         assert profile["num_wheels"] == 4
+        assert profile["odometry_linear_w_per_mps"] == 0.0
+        assert profile["odometry_angular_w_per_radps"] == 0.0
+
+    def test_power_profile_takes_the_odometry_drive_power_coefficients(self, temp_robot_dir):
+        from arena_robots.Robot import RobotView
+
+        rd = temp_robot_dir(model_params={}, control={})
+        telem_dir = rd / "telemetry"
+        telem_dir.mkdir()
+        (telem_dir / "power.yaml").write_text(
+            yaml.dump(
+                {
+                    "static_power_w": 35.0,
+                    "odometry_drive_power": {"linear_w_per_mps": 50.0, "angular_w_per_radps": 17.0},
+                }
+            )
+        )
+
+        profile = RobotView(rd).power_profile({})
+        assert profile is not None
+        assert profile["static_power_w"] == 35.0
+        assert profile["odometry_linear_w_per_mps"] == 50.0
+        assert profile["odometry_angular_w_per_radps"] == 17.0
+
+    def test_the_jackal_estimates_its_driving_power_from_odometry(self):
+        from arena_robots.Robot import RobotView
+
+        # this checkout's jackal, not the installed share
+        profile = RobotView(Path(__file__).resolve().parents[2] / "robots" / "jackal").power_profile({})
+        assert profile is not None
+        assert profile["battery_capacity_wh"] == 270.0
+        assert (profile["odometry_linear_w_per_mps"], profile["odometry_angular_w_per_radps"]) == (50.0, 17.0)
 
 
 def _write(tmp_path: Path, data: dict) -> Path:

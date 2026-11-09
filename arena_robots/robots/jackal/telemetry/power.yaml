@@ -18,3 +18,17 @@ joint_metrics:
 static_power_w:
   compute_core: 20.0
   idle_motors: 15.0
+# Driving power from odometry, used only while joint_states carry neither velocity nor effort (flatsim):
+# P = static_power_w + linear_w_per_mps * |v| + angular_w_per_radps * |omega|, electrical W, v and omega from <robot_ns>/odom.
+# Sources: Clearpath Jackal user manual, System Specifications (docs.clearpathrobotics.com/docs_robots/outdoor_robots/jackal/user_manual_jackal):
+#   Lithium 270 Wh, operating time 8 h basic usage and 2 h heavy usage, max speed 2.0 m/s;
+#   Clearpath Jackal datasheet (Sept 2020): drive power 500 W, weight 17 kg, 2 h maximum / 8 h typical.
+# linear: 270 Wh / 8 h = 33.75 W, the 35 W chassis static above (42.2 W with the default lidar and IMU), so basic usage
+#   is standing still; 270 Wh / 2 h = 135 W.
+#   Assumed: heavy usage is driving all the time at the 2.0 m/s maximum, so driving adds 135 - 35 = 100 W at 2.0 m/s.
+#   Flat-floor rolling alone (rolling_resistance_crr above, 17 kg, 64 % electrical efficiency) would give about 9 W per m/s.
+# angular: skid-steer scrub when turning, mu * m * g * (wheelbase / 2) / efficiency = 0.5 * 17 kg * 9.81 * 0.131 m / 0.64.
+#   Assumed: lateral friction mu 0.5 on an indoor floor; efficiency 0.85 drivetrain (above) * 0.75 motor.
+odometry_drive_power:
+  linear_w_per_mps: 50.0
+  angular_w_per_radps: 17.0
