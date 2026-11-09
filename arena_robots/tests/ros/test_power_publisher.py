@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
@@ -295,6 +296,32 @@ def test_a_robot_standing_still_draws_only_its_standby_power_when_estimated_from
         node.destroy_node()
 
 
+def _soc_then_capacity(node: PowerPublisher, soc: float, capacity: float) -> None:
+    node._on_soc_percent(Float64(data=soc))
+    node._on_battery_capacity_wh(Float64(data=capacity))
+
+
+def _capacity_then_soc(node: PowerPublisher, soc: float, capacity: float) -> None:
+    node._on_battery_capacity_wh(Float64(data=capacity))
+    node._on_soc_percent(Float64(data=soc))
+
+
+@pytest.mark.parametrize("order", [_soc_then_capacity, _capacity_then_soc], ids=["setpoint_first", "capacity_first"])
+def test_a_capacity_override_keeps_the_charge_in_percent_whether_it_comes_before_or_after_the_setpoint(order) -> None:
+    node = _idle_node()
+    try:
+        order(node, 40.0, 15.0)
+        assert node._battery_capacity_wh == 15.0
+        assert node._stored_energy_wh == pytest.approx(6.0)
+
+        node._on_joint_state(_idle(0))
+        node._on_joint_state(_idle(100))
+        assert node._stored_energy_wh == pytest.approx(5.0)
+        assert node._total_energy_consumed_wh == pytest.approx(1.0)
+    finally:
+        node.destroy_node()
+
+
 @pytest.mark.parametrize(
     ("twist", "power"),
     [
@@ -326,6 +353,38 @@ def test_the_estimated_energy_integrates_into_consumption_and_charge() -> None:
         # 36 W + 50 W per m/s * 0.4 m/s = 56 W for 100 s
         assert node._total_energy_consumed_wh == pytest.approx(56.0 * 100.0 / 3600.0)
         assert node._stored_energy_wh == pytest.approx(10.0 - 56.0 * 100.0 / 3600.0)
+    finally:
+        node.destroy_node()
+
+
+def test_a_capacity_override_keeps_the_charge_in_percent_mid_episode_and_leaves_the_consumed_energy_alone() -> None:
+    overridden = _idle_node()
+    plain = _idle_node()
+    try:
+        for node in (overridden, plain):
+            node._on_joint_state(_idle(0))
+            node._on_joint_state(_idle(100))
+        overridden._on_battery_capacity_wh(Float64(data=20.0))
+        assert overridden._stored_energy_wh == pytest.approx(18.0)
+
+        overridden._on_charge_power(Float64(data=360.0))
+        for node in (overridden, plain):
+            node._on_joint_state(_idle(200))
+        assert overridden._stored_energy_wh == 20.0
+        assert overridden._total_energy_consumed_wh == plain._total_energy_consumed_wh == pytest.approx(2.0)
+    finally:
+        overridden.destroy_node()
+        plain.destroy_node()
+
+
+@pytest.mark.parametrize("restore", [0.0, -5.0])
+def test_a_capacity_of_0_or_less_restores_the_configured_one(restore: float) -> None:
+    node = _idle_node()
+    try:
+        _capacity_then_soc(node, 40.0, 15.0)
+        node._on_battery_capacity_wh(Float64(data=restore))
+        assert node._battery_capacity_wh == 10.0
+        assert node._stored_energy_wh == pytest.approx(4.0)
     finally:
         node.destroy_node()
 
@@ -365,6 +424,17 @@ def test_without_coefficients_odometry_changes_nothing() -> None:
         node.destroy_node()
 
 
+@pytest.mark.parametrize("bad", [math.nan, math.inf])
+def test_a_capacity_that_is_not_finite_is_ignored(bad: float) -> None:
+    node = _idle_node()
+    try:
+        node._on_battery_capacity_wh(Float64(data=15.0))
+        node._on_battery_capacity_wh(Float64(data=bad))
+        assert node._battery_capacity_wh == 15.0
+    finally:
+        node.destroy_node()
+
+
 def test_odometry_older_than_a_second_counts_as_standing_still() -> None:
     node = _odometry_node()
     try:
@@ -375,6 +445,23 @@ def test_odometry_older_than_a_second_counts_as_standing_still() -> None:
         node._on_odom(_odom(199.5, v=0.5))
         node._on_joint_state(_flatsim_joints(200))
         assert node._total_energy_consumed_wh == pytest.approx((36.0 * 100.0 + 61.0 * 100.0) / 3600.0)
+    finally:
+        node.destroy_node()
+
+
+def test_the_energy_message_reports_the_charge_against_the_overridden_capacity() -> None:
+    from arena_robots_msgs.msg import Energy
+
+    node = _idle_node()
+    sent: list[Energy] = []
+    node._energy_pub = SimpleNamespace(publish=lambda build: sent.append(build()))
+    try:
+        _capacity_then_soc(node, 50.0, 15.0)
+        node._on_joint_state(_idle(0))
+        node._on_joint_state(_idle(150))
+        # 36 W for 150 s is 1.5 Wh off 7.5 Wh of 15 Wh
+        assert sent[-1].battery_soc_percent == pytest.approx(40.0)
+        assert sent[-1].total_energy_consumed_wh == pytest.approx(1.5)
     finally:
         node.destroy_node()
 
@@ -415,3 +502,31 @@ def test_the_estimate_reaches_the_power_topic_from_the_odom_and_joint_states_top
         executor.shutdown()
         node.destroy_node()
         sim.destroy_node()
+
+
+def test_latched_capacity_and_setpoint_published_before_the_node_starts_reach_it_in_its_namespace() -> None:
+    import rclpy
+    import rclpy.node
+    from rclpy.executors import SingleThreadedExecutor
+    from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
+
+    from arena_robots.power_publisher import PowerPublisher
+
+    namespace = "/test_power_publisher/env_0/jackal"
+    latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
+    peer = rclpy.node.Node("test_power_publisher_peer")
+    peer.create_publisher(Float64, f"{namespace}/power_publisher/soc_percent", latched).publish(Float64(data=40.0))
+    peer.create_publisher(Float64, f"{namespace}/power_publisher/battery_capacity_wh", latched).publish(Float64(data=15.0))
+    node = PowerPublisher(namespace=namespace, parameter_overrides=[Parameter("static_power_w", value=36.0), Parameter("battery_capacity_wh", value=270.0)])
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    try:
+        deadline = time.monotonic() + 5.0
+        while (node._battery_capacity_wh, round(node._soc_fraction, 9)) != (15.0, 0.4) and time.monotonic() < deadline:
+            executor.spin_once(timeout_sec=0.05)
+        assert node._battery_capacity_wh == 15.0
+        assert node._stored_energy_wh == pytest.approx(6.0)
+    finally:
+        executor.shutdown()
+        node.destroy_node()
+        peer.destroy_node()
