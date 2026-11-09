@@ -17,15 +17,16 @@ from std_msgs.msg import Float64
 
 
 class PowerPublisher(Node):
-    """Instantaneous power and integrated energy from joint effort and velocity, battery charge set by `~/soc_percent` and refilled by `~/charge_power` in W."""
+    """Instantaneous power and integrated energy from joint effort and velocity, battery charge set by `~/soc_percent`, refilled by `~/charge_power` in W, and its capacity overridden by `~/battery_capacity_wh`."""
 
-    def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
-        super().__init__("power_publisher", parameter_overrides=parameter_overrides)
+    def __init__(self, *, parameter_overrides: list[Parameter] | None = None, namespace: str | None = None) -> None:
+        super().__init__("power_publisher", namespace=namespace, parameter_overrides=parameter_overrides)
 
         self._static_power_w: float = float(typing.cast(float, self.declare_parameter("static_power_w", 0.0).value))
         self._efficiency: float = float(typing.cast(float, self.declare_parameter("drivetrain_efficiency", 1.0).value))
         self._heating_coeff: float = float(typing.cast(float, self.declare_parameter("heating_coefficient_ch", 0.0).value))
-        self._battery_capacity_wh: float = float(typing.cast(float, self.declare_parameter("battery_capacity_wh", 0.0).value))
+        self._configured_capacity_wh: float = float(typing.cast(float, self.declare_parameter("battery_capacity_wh", 0.0).value))
+        self._battery_capacity_wh: float = self._configured_capacity_wh
         self._max_torque_nm: float = float(typing.cast(float, self.declare_parameter("max_joint_torque_nm", 15.0).value))
         self._filter_tau_s: float = float(typing.cast(float, self.declare_parameter("filter_tau_s", 0.125).value))
 
@@ -46,7 +47,8 @@ class PowerPublisher(Node):
         self._filtered_therm_w: float = 0.0
         self._last_time: float | None = None
         self._total_energy_consumed_wh: float = 0.0
-        self._stored_energy_wh: float = self._battery_capacity_wh
+        # the stored charge as a fraction of the capacity, so a new capacity keeps the percentage whether it comes before or after a setpoint
+        self._soc_fraction: float = 1.0
         self._charge_power_w: float = 0.0
         self._warned_empty_effort: bool = False
 
@@ -58,6 +60,7 @@ class PowerPublisher(Node):
         latched = QoSProfile(depth=1, reliability=ReliabilityPolicy.RELIABLE, durability=DurabilityPolicy.TRANSIENT_LOCAL)
         self.create_subscription(Float64, "~/charge_power", self._on_charge_power, latched)
         self.create_subscription(Float64, "~/soc_percent", self._on_soc_percent, latched)
+        self.create_subscription(Float64, "~/battery_capacity_wh", self._on_battery_capacity_wh, latched)
 
         self.get_logger().info(
             f"PowerPublisher ready: static={self._static_power_w:.1f} W, "
@@ -70,8 +73,23 @@ class PowerPublisher(Node):
     def _on_charge_power(self, msg: Float64) -> None:
         self._charge_power_w = msg.data
 
+    @property
+    def _stored_energy_wh(self) -> float:
+        """The stored charge in Wh."""
+        return self._soc_fraction * self._battery_capacity_wh
+
     def _on_soc_percent(self, msg: Float64) -> None:
-        self._stored_energy_wh = min(max(msg.data / 100.0 * self._battery_capacity_wh, 0.0), self._battery_capacity_wh)
+        self._soc_fraction = min(max(msg.data / 100.0, 0.0), 1.0)
+
+    def _on_battery_capacity_wh(self, msg: Float64) -> None:
+        """Run on a battery of this many Wh, the configured `battery_capacity_wh` when 0 or less, keeping the charge in percent."""
+        if not math.isfinite(msg.data):
+            self.get_logger().warning(f"ignoring a battery capacity of {msg.data} Wh")
+            return
+        capacity = msg.data if msg.data > 0.0 else self._configured_capacity_wh
+        if capacity != self._battery_capacity_wh:
+            self.get_logger().info(f"battery capacity {capacity} Wh (configured {self._configured_capacity_wh} Wh), charge kept at {self._soc_fraction * 100.0:.1f} %")
+        self._battery_capacity_wh = capacity
 
     def _on_joint_state(self, msg: JointState) -> None:
         stamp = msg.header.stamp
@@ -137,7 +155,8 @@ class PowerPublisher(Node):
             dt = current_time - self._last_time
             if dt > 0.0:
                 self._total_energy_consumed_wh += (total_power * dt) / 3600.0
-                self._stored_energy_wh = min(max(self._stored_energy_wh + ((self._charge_power_w - total_power) * dt) / 3600.0, 0.0), self._battery_capacity_wh)
+                if self._battery_capacity_wh > 0.0:
+                    self._soc_fraction = min(max(self._soc_fraction + ((self._charge_power_w - total_power) * dt) / 3600.0 / self._battery_capacity_wh, 0.0), 1.0)
         self._last_time = current_time
 
         def power() -> Power:
@@ -154,10 +173,7 @@ class PowerPublisher(Node):
             return power_msg
 
         def energy() -> Energy:
-            if self._battery_capacity_wh > 0.0:
-                soc = self._stored_energy_wh / self._battery_capacity_wh * 100.0
-            else:
-                soc = 0.0
+            soc = self._soc_fraction * 100.0 if self._battery_capacity_wh > 0.0 else 0.0
             energy_msg = Energy()
             energy_msg.header = msg.header
             energy_msg.total_energy_consumed_wh = self._total_energy_consumed_wh
