@@ -311,6 +311,8 @@ class RobotView(PathView):
         mass_kg = 0.0
         wheel_r = 0.0
         num_wheels = 1
+        odom_linear_w = 0.0
+        odom_angular_w = 0.0
 
         # 1. Primary telemetry configuration from telemetry/power.yaml
         if has_telemetry:
@@ -335,6 +337,10 @@ class RobotView(PathView):
                             static_w = float(sp.get("compute_core", 0.0)) + float(sp.get("idle_motors", 0.0))
                         elif isinstance(sp, (int, float)):
                             static_w = float(sp)
+                    if "odometry_drive_power" in t_cfg and isinstance(t_cfg["odometry_drive_power"], dict):
+                        od = t_cfg["odometry_drive_power"]
+                        odom_linear_w = float(od.get("linear_w_per_mps", 0.0))
+                        odom_angular_w = float(od.get("angular_w_per_radps", 0.0))
             except Exception:
                 pass
 
@@ -387,6 +393,8 @@ class RobotView(PathView):
             'robot_mass_kg': mass_kg,
             'wheel_radius_m': wheel_r,
             'num_wheels': num_wheels,
+            'odometry_linear_w_per_mps': odom_linear_w,
+            'odometry_angular_w_per_radps': odom_angular_w,
         }
 
     @property

@@ -9,11 +9,14 @@ from types import SimpleNamespace
 from typing import TYPE_CHECKING
 
 import pytest
+from nav_msgs.msg import Odometry
 from rclpy.parameter import Parameter
 from sensor_msgs.msg import JointState
 from std_msgs.msg import Float64
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from arena_robots.power_publisher import PowerPublisher
 
 
@@ -248,6 +251,51 @@ def test_a_state_of_charge_setpoint_sets_the_battery_and_leaves_the_consumed_ene
         node.destroy_node()
 
 
+def _odom(sec: float, v: float = 0.0, w: float = 0.0, vy: float = 0.0) -> Odometry:
+    msg = Odometry()
+    msg.header.stamp.sec = int(sec)
+    msg.header.stamp.nanosec = int(round((sec - int(sec)) * 1e9))
+    msg.twist.twist.linear.x = v
+    msg.twist.twist.linear.y = vy
+    msg.twist.twist.angular.z = w
+    return msg
+
+
+def _flatsim_joints(sec: int) -> JointState:
+    """A joint state like flatsim's: names and positions, no velocity, no effort."""
+    msg = JointState()
+    msg.header.stamp.sec = sec
+    msg.name = ["front_left_wheel_joint", "front_right_wheel_joint"]
+    msg.position = [0.0, 0.0]
+    return msg
+
+
+def _odometry_node(**params: float) -> PowerPublisher:
+    from arena_robots.power_publisher import PowerPublisher
+
+    # the jackal's coefficients on a 36 W standby draw
+    defaults = {"static_power_w": 36.0, "battery_capacity_wh": 10.0, "filter_tau_s": 0.0, "odometry_linear_w_per_mps": 50.0, "odometry_angular_w_per_radps": 17.0}
+    return PowerPublisher(parameter_overrides=[Parameter(name, value=value) for name, value in {**defaults, **params}.items()])
+
+
+def _power_over(node: PowerPublisher, joints: Callable[[int], JointState], **twist: float) -> float:
+    """Total power in W between two joint states 100 s apart, with odometry of `twist` before each."""
+    consumed = node._total_energy_consumed_wh
+    for sec in (0, 100):
+        node._on_odom(_odom(sec, **twist))
+        node._on_joint_state(joints(sec))
+    return (node._total_energy_consumed_wh - consumed) * 3600.0 / 100.0
+
+
+def test_a_robot_standing_still_draws_only_its_standby_power_when_estimated_from_odometry() -> None:
+    node = _odometry_node()
+    try:
+        assert _power_over(node, _flatsim_joints) == pytest.approx(36.0)
+        assert node._stored_energy_wh == pytest.approx(9.0)
+    finally:
+        node.destroy_node()
+
+
 def _soc_then_capacity(node: PowerPublisher, soc: float, capacity: float) -> None:
     node._on_soc_percent(Float64(data=soc))
     node._on_battery_capacity_wh(Float64(data=capacity))
@@ -270,6 +318,41 @@ def test_a_capacity_override_keeps_the_charge_in_percent_whether_it_comes_before
         node._on_joint_state(_idle(100))
         assert node._stored_energy_wh == pytest.approx(5.0)
         assert node._total_energy_consumed_wh == pytest.approx(1.0)
+    finally:
+        node.destroy_node()
+
+
+@pytest.mark.parametrize(
+    ("twist", "power"),
+    [
+        ({"v": 0.25}, 36.0 + 12.5),
+        ({"v": 0.5}, 36.0 + 25.0),
+        ({"v": -0.5}, 36.0 + 25.0),
+        ({"v": 0.3, "vy": 0.4}, 36.0 + 25.0),
+        ({"w": 1.5}, 36.0 + 25.5),
+        ({"v": 0.5, "w": -1.0}, 36.0 + 25.0 + 17.0),
+    ],
+    ids=["slow", "nav2_cap", "reverse", "sideways", "turn_in_place", "drive_and_turn"],
+)
+def test_the_odometry_estimate_rises_with_speed_and_turn_rate(twist: dict[str, float], power: float) -> None:
+    node = _odometry_node()
+    try:
+        assert _power_over(node, _flatsim_joints, **twist) == pytest.approx(power)
+    finally:
+        node.destroy_node()
+
+
+def test_the_estimated_energy_integrates_into_consumption_and_charge() -> None:
+    node = _odometry_node()
+    try:
+        node._on_odom(_odom(0, v=0.4))
+        node._on_joint_state(_flatsim_joints(0))
+        for sec in range(10, 101, 10):
+            node._on_odom(_odom(sec, v=0.4))
+            node._on_joint_state(_flatsim_joints(sec))
+        # 36 W + 50 W per m/s * 0.4 m/s = 56 W for 100 s
+        assert node._total_energy_consumed_wh == pytest.approx(56.0 * 100.0 / 3600.0)
+        assert node._stored_energy_wh == pytest.approx(10.0 - 56.0 * 100.0 / 3600.0)
     finally:
         node.destroy_node()
 
@@ -306,6 +389,41 @@ def test_a_capacity_of_0_or_less_restores_the_configured_one(restore: float) -> 
         node.destroy_node()
 
 
+def _gazebo_joints(sec: int) -> JointState:
+    msg = _flatsim_joints(sec)
+    msg.velocity = [5.0, 5.0]
+    msg.effort = [0.5, 0.5]
+    return msg
+
+
+def _velocity_only_joints(sec: int) -> JointState:
+    msg = _flatsim_joints(sec)
+    msg.velocity = [5.0, 5.0]
+    return msg
+
+
+@pytest.mark.parametrize("joints", [_gazebo_joints, _velocity_only_joints], ids=["effort_and_velocity", "velocity_only"])
+def test_joint_states_with_velocity_or_effort_never_get_the_odometry_estimate(joints: Callable[[int], JointState]) -> None:
+    # a little drivetrain friction, so velocity alone has a drive power of its own
+    estimating = _odometry_node(drivetrain_friction=0.1)
+    plain = _odometry_node(drivetrain_friction=0.1, odometry_linear_w_per_mps=0.0, odometry_angular_w_per_radps=0.0)
+    try:
+        driving = _power_over(estimating, joints, v=0.5, w=1.0)
+        assert driving == pytest.approx(_power_over(plain, joints, v=0.5, w=1.0))
+        assert driving > 36.0
+    finally:
+        estimating.destroy_node()
+        plain.destroy_node()
+
+
+def test_without_coefficients_odometry_changes_nothing() -> None:
+    node = _odometry_node(odometry_linear_w_per_mps=0.0, odometry_angular_w_per_radps=0.0)
+    try:
+        assert _power_over(node, _flatsim_joints, v=0.5, w=1.0) == pytest.approx(36.0)
+    finally:
+        node.destroy_node()
+
+
 @pytest.mark.parametrize("bad", [math.nan, math.inf])
 def test_a_capacity_that_is_not_finite_is_ignored(bad: float) -> None:
     node = _idle_node()
@@ -313,6 +431,20 @@ def test_a_capacity_that_is_not_finite_is_ignored(bad: float) -> None:
         node._on_battery_capacity_wh(Float64(data=15.0))
         node._on_battery_capacity_wh(Float64(data=bad))
         assert node._battery_capacity_wh == 15.0
+    finally:
+        node.destroy_node()
+
+
+def test_odometry_older_than_a_second_counts_as_standing_still() -> None:
+    node = _odometry_node()
+    try:
+        node._on_odom(_odom(0, v=0.5))
+        node._on_joint_state(_flatsim_joints(0))
+        node._on_joint_state(_flatsim_joints(100))
+        assert node._total_energy_consumed_wh == pytest.approx(36.0 * 100.0 / 3600.0)
+        node._on_odom(_odom(199.5, v=0.5))
+        node._on_joint_state(_flatsim_joints(200))
+        assert node._total_energy_consumed_wh == pytest.approx((36.0 * 100.0 + 61.0 * 100.0) / 3600.0)
     finally:
         node.destroy_node()
 
@@ -332,6 +464,44 @@ def test_the_energy_message_reports_the_charge_against_the_overridden_capacity()
         assert sent[-1].total_energy_consumed_wh == pytest.approx(1.5)
     finally:
         node.destroy_node()
+
+
+def test_the_estimate_reaches_the_power_topic_from_the_odom_and_joint_states_topics() -> None:
+    import rclpy
+    import rclpy.node
+    from arena_robots_msgs.msg import Power
+    from rclpy.executors import SingleThreadedExecutor
+    from rclpy.qos import QoSProfile, ReliabilityPolicy
+
+    qos = QoSProfile(depth=10, reliability=ReliabilityPolicy.RELIABLE)
+    node = _odometry_node()
+    sim = rclpy.node.Node("test_power_publisher_sim")
+    odom = sim.create_publisher(Odometry, "/odom", qos)
+    joints = sim.create_publisher(JointState, "/joint_states", qos)
+    power: list[Power] = []
+    sim.create_subscription(Power, "/power_publisher/power", power.append, qos)
+    executor = SingleThreadedExecutor()
+    executor.add_node(node)
+    executor.add_node(sim)
+
+    def spin_until(pred: Callable[[], bool], what: str) -> None:
+        deadline = time.monotonic() + 5.0
+        while not pred():
+            assert time.monotonic() < deadline, f"timed out waiting for {what}"
+            executor.spin_once(timeout_sec=0.05)
+
+    try:
+        spin_until(lambda: odom.get_subscription_count() == 1 and joints.get_subscription_count() == 1 and node._power_pub.wanted, "the subscriptions")
+        odom.publish(_odom(10, v=0.5, w=1.0))
+        spin_until(lambda: node._odom is not None, "the odometry")
+        joints.publish(_flatsim_joints(10))
+        spin_until(lambda: len(power) == 1, "a power message")
+        assert power[0].total_power_w == pytest.approx(36.0 + 25.0 + 17.0)
+        assert power[0].static_power_w == pytest.approx(36.0)
+    finally:
+        executor.shutdown()
+        node.destroy_node()
+        sim.destroy_node()
 
 
 def test_latched_capacity_and_setpoint_published_before_the_node_starts_reach_it_in_its_namespace() -> None:
