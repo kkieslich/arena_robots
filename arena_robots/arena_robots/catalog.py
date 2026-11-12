@@ -1,8 +1,8 @@
 """Component catalog + sensor-template rendering. Launch-free and pure: loads
 ``components/<type>/<variant>/component.yaml`` and renders a robot's
 :class:`arena_robots.assembly.ResolvedAssembly` into its effective gz ``SensorSpec``
-list. No xacro loading, no ROS: this module only decides what a placement's sensor
-declarations *say*, not how they get instantiated.
+list and the wrapper's own sensor XML. No xacro loading, no ROS: this module only
+decides what a placement's sensor declarations *say*, not how they get instantiated.
 
 ``component.yaml`` shape::
 
@@ -14,7 +14,11 @@ declarations *say*, not how they get instantiated.
     sensor:
       gz:
         - {name: <SensorSpec.name>, type: <SensorSpec.type>, topic: <relative topic>,
-           frame: <SensorSpec.frame>, sensor: <backing gz <sensor> name>}
+           frame: <SensorSpec.frame>, sensor: <backing gz <sensor> name>,
+           define: {collision: <collision name>, update_rate: <hz>}}
+        # OPTIONAL define: emit the backing <sensor> element from the wrapper xacro
+        # (currently only type: contact). Omit it when the component's own xacro
+        # already emits the <sensor>.
         # one entry per gz output the component contributes (a component is a
         # LIST of outputs, e.g. gpu_lidar -> laserscan + pointcloud)
     ros2_control:      # OPTIONAL (arm components only); absent -> []
@@ -88,10 +92,11 @@ class ComponentSpec:
     xacro_macro: str
     attach: dict[str, str]
     args: dict[str, object]
-    sensor_gz: list[dict[str, str]]
+    sensor_gz: list[dict[str, object]]
     """Ordered, un-rendered ``sensor.gz`` output templates; render per-placement via
     :func:`render_effective_sensors`, never mutate this list in place (shared across
-    every placement of this component)."""
+    every placement of this component). An entry may carry an optional ``define``
+    block, which ``render_wrapper_xacro`` turns into a ``<gazebo><sensor>`` element."""
     ros2_control_joints: list[dict[str, object]] = attrs.field(factory=list)
     """Un-rendered ``ros2_control.joints`` entries; empty for
     components with no actuator axes (sensors). Render per-placement via
@@ -224,6 +229,10 @@ class Catalog:
         raise RuntimeError(f"component '{type_}/{variant}' not found; available '{type_}' variants: {available}")
 
 
+def _render_sensor_templates(component: ComponentSpec, context: dict[str, typing.Any]) -> list[dict[str, object]]:
+    return [YAMLReplacer(context).replace(copy.deepcopy(template)) for template in component.sensor_gz]
+
+
 def render_effective_sensors(resolved: ResolvedAssembly, catalog: Catalog, *, prefix: str = 'robot_') -> list[SensorSpec]:
     """Render every placement's ``sensor.gz`` templates into the robot's full effective
     ``SensorSpec`` list, in placement then per-component-output order. Each template dict
@@ -239,15 +248,14 @@ def render_effective_sensors(resolved: ResolvedAssembly, catalog: Catalog, *, pr
             **placement.params,
             **placement.overrides,
         }
-        for template in component.sensor_gz:
-            rendered = YAMLReplacer(context).replace(copy.deepcopy(template))
+        for entry in _render_sensor_templates(component, context):
             out.append(
                 SensorSpec(
-                    name=str(rendered['name']),
-                    type=str(rendered['type']),
-                    topic='${namespace}/' + str(rendered['topic']),
-                    frame=str(rendered['frame']),
-                    sensor=str(rendered['sensor']) if 'sensor' in rendered else None,
+                    name=str(entry['name']),
+                    type=str(entry['type']),
+                    topic='${namespace}/' + str(entry['topic']),
+                    frame=str(entry['frame']),
+                    sensor=str(entry['sensor']) if 'sensor' in entry else None,
                 )
             )
     return out
@@ -284,6 +292,40 @@ def resolve_mount_parent(resolved: ResolvedAssembly, catalog: Catalog, mount: Mo
 
 
 _XACRO_NS = 'http://www.ros.org/wiki/xacro'
+
+
+def _gazebo_sensor_lines(entry: dict[str, object]) -> list[str]:
+    define = entry.get('define')
+    if not define:
+        return []
+    if not isinstance(define, dict):
+        raise ValueError(f"sensor {entry['name']!r}: 'define' must be a mapping")
+
+    sensor_type = str(define.get('type') or entry['type'])
+    if sensor_type != 'contact':
+        raise ValueError(f"sensor {entry['name']!r}: only 'contact' define blocks are implemented, got {sensor_type!r}")
+
+    if not entry.get('sensor'):
+        raise ValueError(f"sensor {entry['name']!r}: 'sensor' is required with a 'define' block")
+    link = str(entry['frame'])
+    name = str(entry['sensor'])
+    collisions = define.get('collision') or []
+    if isinstance(collisions, str):
+        collisions = [collisions]
+    if not isinstance(collisions, (list, tuple)) or not collisions:
+        raise ValueError(f"sensor {entry['name']!r}: 'define.collision' is required for a contact sensor")
+
+    lines = [
+        f'  <gazebo reference={quoteattr(link)}>',
+        f'    <sensor name={quoteattr(name)} type="contact">',
+        '      <always_on>true</always_on>',
+    ]
+    if 'update_rate' in define:
+        lines.append(f'      <update_rate>{define["update_rate"]}</update_rate>')
+    lines.append('      <contact>')
+    lines.extend(f'        <collision>{str(collision)}</collision>' for collision in collisions)
+    lines.extend(['      </contact>', '    </sensor>', '  </gazebo>'])
+    return lines
 
 
 def _chassis_args(chassis_path: Path) -> list[tuple[str, str]]:
@@ -364,6 +406,9 @@ def render_wrapper_xacro(view: RobotView, resolved: ResolvedAssembly, *, catalog
         body_lines.append(f'  <xacro:{component.xacro_macro} {attrs_str}>')
         body_lines.append(f'    <origin xyz="{x} {y} {z}" rpy="{r} {p} {yw}"/>')
         body_lines.append(f'  </xacro:{component.xacro_macro}>')
+
+        for entry in _render_sensor_templates(component, context):
+            body_lines.extend(_gazebo_sensor_lines(entry))
 
     lines = ['<?xml version="1.0"?>', f'<robot name="{view.name}" xmlns:xacro="{_XACRO_NS}">']
     for name, default in args:

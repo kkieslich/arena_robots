@@ -17,9 +17,9 @@
 
 from ament_index_python.packages import get_package_share_directory
 
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.actions import (
-    DeclareLaunchArgument,
     GroupAction,
     IncludeLaunchDescription,
     OpaqueFunction
@@ -31,18 +31,18 @@ from launch_ros.actions import PushRosNamespace, SetRemap
 
 
 ARGUMENTS = [
-    DeclareLaunchArgument('use_sim_time', default_value='false',
+    LaunchArgument('use_sim_time', default_value='false',
                           choices=['true', 'false'],
-                          description='Use sim time'),
-    DeclareLaunchArgument('params_file',
+                          description='Use the sim clock.'),
+    LaunchArgument('params_file',
                           default_value=PathJoinSubstitution([
                               get_package_share_directory('turtlebot4_navigation'),
                               'config',
                               'nav2.yaml'
                               ]),
-                          description='Nav2 parameters'),
-    DeclareLaunchArgument('namespace', default_value='',
-                          description='Robot namespace')
+                          description='Nav2 parameters file.'),
+    LaunchArgument('namespace', default_value='',
+                          description='Robot namespace.')
 ]
 
 

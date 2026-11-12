@@ -592,7 +592,10 @@ async def robots_reach(
     roll: float = 0.0,
     pitch: float = 0.0,
     yaw: float = 0.0,
-    frame: Annotated[str | None, Field(description="frame of the Cartesian target, the robot's base frame by default")] = None,
+    frame: Annotated[str | None, Field(description="frame of the Cartesian target, the robot's base frame by default, also an episode object name or <object>/<link>")] = None,
+    motion: Annotated[Literal["free", "linear"], Field(description="free plans around obstacles, linear moves the tool along a straight line")] = "free",
+    speed: Annotated[float, Field(ge=0, le=1, description="velocity and acceleration scale in (0, 1], 0 = full speed")] = 0.0,
+    relative: Annotated[bool, Field(description="target is an offset from the current tool pose, expressed in frame")] = False,
     instance: Annotated[str, Field(description="arm instance (mount name), empty for the only arm")] = "",
     position_tolerance: Annotated[float, Field(ge=0, description="m, 0 = task default")] = 0.0,
     orientation_tolerance: Annotated[float, Field(ge=0, description="rad, 0 = task default")] = 0.0,
@@ -615,6 +618,9 @@ async def robots_reach(
         orientation_tolerance=orientation_tolerance or None,
         planning_time=planning_time or None,
         instance=instance,
+        motion=motion,
+        speed=speed or None,
+        relative=relative,
     )
     target = named if named is not None else f"({x:.2f}, {y:.2f}, {z:.2f})"
     return await _phase_job("reach", f"reach {entry['name']} {target}", env_id, entry, TaskKind.REACH_POSE, phase, _arm_feedback)

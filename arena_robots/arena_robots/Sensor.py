@@ -48,6 +48,7 @@ BRIDGE_TYPES: dict[str, tuple[str, str]] = {
     'image': ('sensor_msgs/msg/Image', 'gz.msgs.Image'),
     'depth': ('sensor_msgs/msg/Image', 'gz.msgs.Image'),
     'camera_info': ('sensor_msgs/msg/CameraInfo', 'gz.msgs.CameraInfo'),
+    'contact': ('ros_gz_interfaces/msg/Contacts', 'gz.msgs.Contacts'),
 }
 
 
@@ -93,6 +94,8 @@ def _grouped_sensors(
             sensor_type, anchor = 'depth', outputs['depth']
         elif 'imu' in outputs:
             sensor_type, anchor = 'imu', outputs['imu']
+        elif 'contact' in outputs:
+            sensor_type, anchor = 'contact', outputs['contact']
         else:
             print(f"[sensor_topics] {sensor_name!r}: no anchor topic among {sorted(outputs)}", file=sys.stderr)
             continue
@@ -114,7 +117,8 @@ def topic_elements(sensors: Sequence[SensorSpec], prefix: str) -> list[tuple[str
     """
     patches: list[tuple[str, str, str]] = []
     for sensor_name, sensor_type, anchor, outputs, _derived in _grouped_sensors(sensors):
-        patches.append((sensor_name, 'topic', _join(prefix, anchor)))
+        topic_path = 'contact/topic' if sensor_type == 'contact' else 'topic'
+        patches.append((sensor_name, topic_path, _join(prefix, anchor)))
         if 'camera_info' in outputs and sensor_type in ('camera', 'depth', 'rgbd_camera'):
             patches.append((sensor_name, 'camera/camera_info_topic', _join(prefix, outputs['camera_info'])))
     return patches

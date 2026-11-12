@@ -3,7 +3,7 @@
 Bootstraps a planner_server-only nav2 stack and a goal-pose -> compute_path_to_pose bridge.
 """
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -16,12 +16,12 @@ def generate_launch_description() -> LaunchDescription:
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot')
-    arena_env_node = LaunchArgument('arena_env_node', default_value='')
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    use_sim_time = LaunchArgument('use_sim_time')
-    kind = LaunchArgument('kind')
+    robot = LaunchArgument('robot', description='Robot model name.')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    kind = LaunchArgument('kind', description='Nav2 global planner kind.')
 
     nav2_launch = PathJoinSubstitution([
         FindPackageShare('arena_robots'),

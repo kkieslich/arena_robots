@@ -12,8 +12,8 @@ Gazebo's gz_ros2_control or Isaac's topic_bridge.
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
 from launch.substitutions import Command, LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -29,9 +29,9 @@ def generate_launch_description():
 
     use_sim_time = LaunchConfiguration('use_sim_time')
 
-    declare_namespace = DeclareLaunchArgument('namespace', default_value='')
-    declare_base_frame = DeclareLaunchArgument('base_frame', default_value='base')
-    declare_use_sim_time = DeclareLaunchArgument('use_sim_time', default_value='true')
+    declare_namespace = LaunchArgument('namespace', default_value='', description='Robot namespace.')
+    declare_base_frame = LaunchArgument('base_frame', default_value='base', description='Base link frame.')
+    declare_use_sim_time = LaunchArgument('use_sim_time', default_value='true', description='Use the sim clock.')
 
     urdf = {'urdf': Command(['xacro ', description_path])}
 

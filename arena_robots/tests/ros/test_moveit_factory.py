@@ -249,6 +249,18 @@ class TestBuildMoveitParamsSmallUrComponents(_SrdfLinksExist):
         return p
 
 
+_PILZ = "pilz_industrial_motion_planner"
+_CARTESIAN_KEYS = {"max_trans_vel", "max_trans_acc", "max_trans_dec", "max_rot_vel"}
+
+
+def _assert_linear_planning_available(params: dict) -> None:
+    assert {"ompl", _PILZ} <= set(params["planning_pipelines"])
+    assert params["default_planning_pipeline"] == "ompl"
+    assert set(params["robot_description_planning"]["cartesian_limits"]) == _CARTESIAN_KEYS
+    for joint, limits in params["robot_description_planning"]["joint_limits"].items():
+        assert not [key for key, value in limits.items() if type(value) is int], joint
+
+
 def _group_chains(params: dict) -> dict[str, tuple[str, str]]:
     srdf = ET.fromstring(params["robot_description_semantic"])
     return {g.get("name", ""): (c.get("base_link", ""), c.get("tip_link", "")) for g in srdf.iter("group") for c in g.findall("chain")}
@@ -313,6 +325,24 @@ class TestBuildMoveitParamsFr3(_SrdfLinksExist):
 
 
 @pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
+class TestBuildMoveitParamsJackalFr3:
+    """FR3 on jackal's top mount."""
+
+    @pytest.fixture(scope="class")
+    def params(self, require_installed: Callable[[str], None]) -> dict:
+        from arena_robots.assembly import RequestPart
+        from arena_robots.moveit_factory import build_moveit_params
+
+        require_installed("arm/fr3")
+        p = build_moveit_params("jackal", tf_prefix="", parts={"arm": [RequestPart(variant="fr3", mount="top")]}, instance="top")
+        assert p is not None
+        return p
+
+    def test_ompl_and_pilz_pipelines_with_cartesian_limits(self, params: dict) -> None:
+        _assert_linear_planning_available(params)
+
+
+@pytest.mark.skipif(_XACRO is None, reason="xacro CLI not on PATH; run under the Arena container (bash arena -c pytest)")
 class TestBuildMoveitParamsTiago(_SrdfLinksExist):
     """TIAGo's native arm: group `arm` from torso_lift_link to arm_tool_link, limits from the URDF."""
 
@@ -353,6 +383,9 @@ class TestBuildMoveitParamsTiago(_SrdfLinksExist):
 
     def test_controller_names_arm_controller(self, params: dict) -> None:
         assert _controller_joints(params, "arm_controller") == self._JOINTS
+
+    def test_ompl_and_pilz_pipelines_with_cartesian_limits(self, params: dict) -> None:
+        _assert_linear_planning_available(params)
 
     def test_tf_prefix_reaches_chain(self) -> None:
         from arena_robots.moveit_factory import build_moveit_params

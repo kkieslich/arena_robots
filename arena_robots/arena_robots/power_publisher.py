@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import math
-import typing
 
 import rclpy
 from arena_rclpy_mixins.lazy import LazyPublisher
+from arena_rclpy_mixins.params import Param, Range, declare
 from arena_rclpy_mixins.spin import spin_node
 from arena_robots_msgs.msg import Energy, Power
 from nav_msgs.msg import Odometry
@@ -31,25 +31,25 @@ class PowerPublisher(Node):
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None, namespace: str | None = None) -> None:
         super().__init__("power_publisher", namespace=namespace, parameter_overrides=parameter_overrides)
 
-        self._static_power_w: float = float(typing.cast(float, self.declare_parameter("static_power_w", 0.0).value))
-        self._efficiency: float = float(typing.cast(float, self.declare_parameter("drivetrain_efficiency", 1.0).value))
-        self._heating_coeff: float = float(typing.cast(float, self.declare_parameter("heating_coefficient_ch", 0.0).value))
-        self._configured_capacity_wh: float = float(typing.cast(float, self.declare_parameter("battery_capacity_wh", 0.0).value))
+        self._static_power_w: float = declare(self, Param[float]("static_power_w", 0.0, "Constant baseline power draw in W.", constraint=Range(lo=0.0))).value
+        self._efficiency: float = declare(self, Param[float]("drivetrain_efficiency", 1.0, "Drivetrain efficiency dividing the mechanical power.", constraint=Range(lo=0.0, lo_open=True))).value
+        self._heating_coeff: float = declare(self, Param[float]("heating_coefficient_ch", 0.0, "Thermal power per squared joint torque in W/Nm^2.", constraint=Range(lo=0.0))).value
+        self._configured_capacity_wh: float = declare(self, Param[float]("battery_capacity_wh", 0.0, "Battery capacity in Wh (0 = unknown).", constraint=Range(lo=0.0))).value
         self._battery_capacity_wh: float = self._configured_capacity_wh
-        self._max_torque_nm: float = float(typing.cast(float, self.declare_parameter("max_joint_torque_nm", 15.0).value))
-        self._filter_tau_s: float = float(typing.cast(float, self.declare_parameter("filter_tau_s", 0.125).value))
+        self._max_torque_nm: float = declare(self, Param[float]("max_joint_torque_nm", 15.0, "Joint torque clamp in Nm (0 = no clamp).", constraint=Range(lo=0.0))).value
+        self._filter_tau_s: float = declare(self, Param[float]("filter_tau_s", 0.125, "Time constant of the power low-pass filter in s (0 = unfiltered).", constraint=Range(lo=0.0))).value
 
         # Physical drivetrain & rolling resistance parameters
-        self._drivetrain_damping: float = float(typing.cast(float, self.declare_parameter("drivetrain_damping", 0.0).value))
-        self._drivetrain_friction: float = float(typing.cast(float, self.declare_parameter("drivetrain_friction", 0.0).value))
-        self._rolling_resistance_crr: float = float(typing.cast(float, self.declare_parameter("rolling_resistance_crr", 0.0).value))
-        self._robot_mass_kg: float = float(typing.cast(float, self.declare_parameter("robot_mass_kg", 0.0).value))
-        self._wheel_radius_m: float = float(typing.cast(float, self.declare_parameter("wheel_radius_m", 0.0).value))
-        self._num_wheels: int = int(typing.cast(int, self.declare_parameter("num_wheels", 1).value))
+        self._drivetrain_damping: float = declare(self, Param[float]("drivetrain_damping", 0.0, "Viscous drivetrain damping torque per joint velocity in Nm*s/rad.", constraint=Range(lo=0.0))).value
+        self._drivetrain_friction: float = declare(self, Param[float]("drivetrain_friction", 0.0, "Coulomb drivetrain friction torque in Nm.", constraint=Range(lo=0.0))).value
+        self._rolling_resistance_crr: float = declare(self, Param[float]("rolling_resistance_crr", 0.0, "Rolling resistance coefficient of the wheels.", constraint=Range(lo=0.0))).value
+        self._robot_mass_kg: float = declare(self, Param[float]("robot_mass_kg", 0.0, "Robot mass in kg, used for rolling resistance (0 = none).", constraint=Range(lo=0.0))).value
+        self._wheel_radius_m: float = declare(self, Param[float]("wheel_radius_m", 0.0, "Wheel radius in m, used for rolling resistance (0 = none).", constraint=Range(lo=0.0))).value
+        self._num_wheels: int = declare(self, Param[int]("num_wheels", 1, "Number of wheels sharing the rolling resistance (0 = no rolling resistance).", constraint=Range(lo=0))).value
 
         # Driving power estimated from odometry, only for joint states without velocity and effort
-        self._odom_linear_w_per_mps: float = float(typing.cast(float, self.declare_parameter("odometry_linear_w_per_mps", 0.0).value))
-        self._odom_angular_w_per_radps: float = float(typing.cast(float, self.declare_parameter("odometry_angular_w_per_radps", 0.0).value))
+        self._odom_linear_w_per_mps: float = declare(self, Param[float]("odometry_linear_w_per_mps", 0.0, "Electrical driving power per m/s of odometry speed in W*s/m, used when joint states carry no velocity or effort (0 = off).", constraint=Range(lo=0.0))).value
+        self._odom_angular_w_per_radps: float = declare(self, Param[float]("odometry_angular_w_per_radps", 0.0, "Electrical driving power per rad/s of odometry yaw rate in W*s/rad, used when joint states carry no velocity or effort (0 = off).", constraint=Range(lo=0.0))).value
         self._estimates_from_odometry: bool = self._odom_linear_w_per_mps > 0.0 or self._odom_angular_w_per_radps > 0.0
         self._odom: tuple[float, float, float] | None = None  # stamp in s, |v| in m/s, |omega| in rad/s
 

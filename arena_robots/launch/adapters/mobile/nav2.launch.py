@@ -3,15 +3,8 @@
 import os
 
 from arena_bringup.future import PythonExpression
-from arena_bringup.substitutions import (
-    LaunchArgument,
-    YAMLDropSubstitution,
-    YAMLFileSubstitution,
-    YAMLMergeSubstitution,
-    YAMLReplaceSubstitution,
-    YAMLRetrieveSubstitution,
-    YAMLSelectSubstitution,
-)
+from arena_rclpy_mixins.launch_argument import LaunchArgument
+from arena_bringup.substitutions import YAMLDropSubstitution, YAMLFileSubstitution, YAMLMergeSubstitution, YAMLReplaceSubstitution, YAMLRetrieveSubstitution, YAMLSelectSubstitution
 from arena_robots.nav2 import (
     Nav2CollisionDerivedYAML,
     Nav2KinematicsDerivedYAML,
@@ -28,26 +21,31 @@ from launch_ros.substitutions import FindPackageShare
 from nav2_common.launch import RewrittenYaml
 
 
+MAPPING_MODES = ('static', 'slam')  # static = the env's map server, slam = built from the lidar while driving
+
+
 def generate_launch_description():
     robots_root = FindPackageShare('arena_robots')
 
     ld_items = []
     LaunchArgument.auto_append(ld_items)
 
-    robot = LaunchArgument('robot')
-    arena_env_node = LaunchArgument('arena_env_node', default_value='')
-    env_namespace = LaunchArgument('env_namespace', default_value='')
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    use_sim_time = LaunchArgument('use_sim_time')
-    global_planner = LaunchArgument('global_planner')
-    local_planner = LaunchArgument('local_planner')
-    inter_planner = LaunchArgument('inter_planner')
-    train_mode = LaunchArgument('train_mode', default_value='false')
-    planner_only = LaunchArgument('planner_only', default_value='false')
-    sensors_json = LaunchArgument('sensors_json', default_value='')
-    params_overlay = LaunchArgument('params_overlay', default_value='')
-    agent = LaunchArgument('agent', default_value='')
+    robot = LaunchArgument('robot', description='Robot model name.')
+    arena_env_node = LaunchArgument('arena_env_node', default_value='', description='Name of the env node whose map and services the robot uses.')
+    env_namespace = LaunchArgument('env_namespace', default_value='', description='ROS namespace of the env the robot belongs to.')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    global_planner = LaunchArgument('global_planner', description='Nav2 global planner kind.')
+    local_planner = LaunchArgument('local_planner', description='Nav2 controller kind.')
+    inter_planner = LaunchArgument('inter_planner', description='Nav2 inter planner kind.')
+    train_mode = LaunchArgument('train_mode', default_value='false', description='Whether the robot is driven by a DRL agent in training (true or false).')
+    planner_only = LaunchArgument('planner_only', default_value='false', description='Run only the global planner.')
+    sensors_json = LaunchArgument('sensors_json', default_value='', description='JSON list of the robot sensor specs used to derive the costmap observation sources.')
+    params_overlay = LaunchArgument('params_overlay', default_value='', description='Nav2 params overlay, a path or an overlay name (empty = none).')
+    agent = LaunchArgument('agent', default_value='', description='Name of the DRL agent directory the controller loads weights from.')
+    mapping = LaunchArgument('mapping', default_value='static', description='Map source: static = the env map server, slam = built from the lidar while driving.')
+    scan_topic = LaunchArgument('scan_topic', default_value='', description='Laserscan topic of the SLAM mapper (empty = none).')
 
     def nav2_cfg(*parts):
         return PathJoinSubstitution([robots_root, 'config', 'nav2', *parts])
@@ -89,6 +87,10 @@ def generate_launch_description():
                 # In train_mode the RL environment publishes cmd_vel directly.
                 # Redirect the collision_monitor output to a dead topic so it
                 # never overwrites the RL agent's velocity commands.
+                'map_topic': PythonExpression(
+                    ['"', namespace.substitution, '/map" if "', mapping.substitution, '" == "slam" else "', arena_env_node.substitution, '/map"']
+                ),
+                'scan_topic': scan_topic.substitution,
                 'cmd_vel_out_topic': PythonExpression(
                     ['"cmd_vel_sink" if "', train_mode.substitution, '" == "true" else "cmd_vel"']
                 ),
@@ -106,6 +108,16 @@ def generate_launch_description():
             YAMLDropSubstitution(overlay, 'substitutions'),
         )),
         substitutions=YAMLFileSubstitution(substitutions)
+    )
+
+    slam_params = ParameterFile(
+        RewrittenYaml(
+            source_file=YAMLReplaceSubstitution(obj=YAMLFileSubstitution(nav2_cfg('slam.yaml')), substitutions=YAMLFileSubstitution(substitutions)),
+            root_key=namespace.substitution,
+            param_rewrites={'use_sim_time': use_sim_time.substitution},
+            convert_types=True,
+        ),
+        allow_substs=True,
     )
 
     nav2_configured_params = ParameterFile(
@@ -134,10 +146,16 @@ def generate_launch_description():
     def launch_setup(context, *args, **kwargs):
         tgn = arena_env_node.substitution.perform(context)
         is_planner_only = planner_only.substitution.perform(context).lower() == 'true'
+        mapping_mode = mapping.substitution.perform(context)
+        if mapping_mode not in MAPPING_MODES:
+            raise ValueError(f"mapping {mapping_mode!r} is none of {', '.join(MAPPING_MODES)}")
+        slam = mapping_mode == 'slam'
+        if slam and not scan_topic.substitution.perform(context):
+            raise ValueError('mapping:=slam needs a laserscan sensor on the robot')
         remappings: list[tuple[SomeSubstitutionsType, SomeSubstitutionsType]] = [
             ('map_server', '/map_server'),
         ]
-        if tgn:
+        if tgn and not slam:
             remappings.append(('map', PathJoinSubstitution([tgn, 'map'])))
 
         planner_server_node = Node(
@@ -187,6 +205,9 @@ def generate_launch_description():
                 ),
             ]
 
+        if slam:
+            lifecycle_nodes = ['slam_toolbox', *lifecycle_nodes]
+
         bringup_cmd_group = GroupAction([
             *(SetRemap(src=r[0], dst=r[1]) for r in remappings),
             *nav2_nodes,
@@ -201,6 +222,14 @@ def generate_launch_description():
             ),
         ])
         result: list = [bringup_cmd_group]
+        if slam:
+            result.append(
+                Node(
+                    package='slam_toolbox', executable='async_slam_toolbox_node', name='slam_toolbox',
+                    output='screen', parameters=[slam_params],
+                    remappings=[(f'/{topic}', PathJoinSubstitution([namespace.substitution, topic])) for topic in ('map', 'map_metadata')],
+                )
+            )
 
         controller_launch = nav2_cfg(
             'controllers', local_planner.substitution, 'controller.launch.py'

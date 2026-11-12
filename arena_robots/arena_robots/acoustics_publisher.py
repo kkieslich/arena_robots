@@ -8,6 +8,7 @@ from pathlib import Path
 import rclpy
 import yaml
 from arena_rclpy_mixins.lazy import LazyPublisher
+from arena_rclpy_mixins.params import Param, declare
 from arena_rclpy_mixins.spin import spin_node
 from arena_robots_msgs.msg import Acoustics, CollisionEvents
 from rclpy.node import Node
@@ -24,8 +25,8 @@ class AcousticsPublisher(Node):
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("acoustics_publisher", parameter_overrides=parameter_overrides)
 
-        robot_name_param = str(self.declare_parameter("robot_name", "").value)
-        profile_path_param = str(self.declare_parameter("profile_path", "").value)
+        robot_name_param = declare(self, Param[str]("robot_name", "", "Robot model name the acoustic profile belongs to.")).value
+        profile_path_param = declare(self, Param[str]("profile_path", "", "Path of the acoustic profile YAML of the robot (required).")).value
 
         profile_file = Path(profile_path_param)
         if not profile_path_param or not profile_file.is_file():
@@ -53,7 +54,7 @@ class AcousticsPublisher(Node):
         # The profile is a fitted parametric model, not a calibration against a sound level meter
         self._calibration_status: str = f"uncalibrated_parametric_model:{robot_name_param or profile_file.stem}"
 
-        topic_param = str(self.declare_parameter("topic", "acoustics").value)
+        topic_param = declare(self, Param[str]("topic", "acoustics", "Topic the ego-noise level is published on.")).value
 
         # State for the Fast-weighting EMA (IEC 61672-1 Fast time constant = 125ms)
         self._last_time: float | None = None

@@ -13,8 +13,9 @@
 # limitations under the License.
 
 
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
-from launch.actions import (DeclareLaunchArgument, GroupAction,
+from launch.actions import (GroupAction,
                             IncludeLaunchDescription, SetEnvironmentVariable)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -58,62 +59,62 @@ def generate_launch_description():
     stdout_linebuf_envvar = SetEnvironmentVariable(
         'RCUTILS_LOGGING_BUFFERED_STREAM', '1')
 
-    declare_namespace_cmd = DeclareLaunchArgument(
+    declare_namespace_cmd = LaunchArgument(
         'namespace',
         default_value='',
-        description='Top-level namespace')
+        description='Robot namespace.')
 
-    declare_use_namespace_cmd = DeclareLaunchArgument(
+    declare_use_namespace_cmd = LaunchArgument(
         'use_namespace',
         default_value='false',
-        description='Whether to apply a namespace to the navigation stack')
+        description='Apply the namespace to the navigation stack.')
 
-    declare_slam_cmd = DeclareLaunchArgument(
+    declare_slam_cmd = LaunchArgument(
         'slam',
         default_value='false',
         choices=['true', 'false'],
-        description='Whether to run a SLAM')
+        description='Run SLAM.')
 
-    declare_localization_cmd = DeclareLaunchArgument(
+    declare_localization_cmd = LaunchArgument(
         'localization',
         default_value='false',
         choices=['true', 'false'],
-        description='Whether to run localization')
+        description='Run localization.')
 
-    declare_nav2_cmd = DeclareLaunchArgument(
+    declare_nav2_cmd = LaunchArgument(
         'nav2',
         default_value='true',
         choices=['true', 'false'],
-        description='Whether to run Nav2')
+        description='Run Nav2.')
 
-    declare_map_yaml_cmd = DeclareLaunchArgument(
+    declare_map_yaml_cmd = LaunchArgument(
         'map',
         default_value=PathJoinSubstitution(
             [pkg_jackal_navigation,
              'maps',
              'depot.yaml']),
-        description='Full path to map yaml file to load')
+        description='Map yaml file to load.')
 
-    declare_use_sim_time_cmd = DeclareLaunchArgument(
+    declare_use_sim_time_cmd = LaunchArgument(
         'use_sim_time',
         default_value='false',
-        description='Use simulation (Gazebo) clock if true')
+        description='Use the sim clock.')
 
-    declare_params_file_cmd = DeclareLaunchArgument(
+    declare_params_file_cmd = LaunchArgument(
         'params_file',
         default_value=PathJoinSubstitution(
             [pkg_jackal_navigation,
              'config',
              'nav2.yaml']),
-        description='Full path to the ROS2 parameters file to use for all launched nodes')
+        description='Parameters file for all launched nodes.')
 
-    declare_autostart_cmd = DeclareLaunchArgument(
+    declare_autostart_cmd = LaunchArgument(
         'autostart', default_value='true',
-        description='Automatically startup the nav2 stack')
+        description='Start the Nav2 stack automatically.')
 
-    declare_use_composition_cmd = DeclareLaunchArgument(
+    declare_use_composition_cmd = LaunchArgument(
         'use_composition', default_value='True',
-        description='Whether to use composed bringup')
+        description='Use composed bringup.')
 
     # Specify the actions
     bringup_cmd_group = GroupAction([

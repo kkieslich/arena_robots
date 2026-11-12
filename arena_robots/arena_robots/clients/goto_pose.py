@@ -76,9 +76,8 @@ class GotoPoseClient(Client):
     def is_done(self) -> bool | None:
         return self._done
 
-    def cancel(self) -> None:
-        if self._goal_handle is not None:
-            self._goal_handle.cancel_goal_async()
+    def cancel(self) -> Future | None:
+        return None if self._goal_handle is None else self._goal_handle.cancel_goal_async()
 
     @property
     def status(self) -> int | None:

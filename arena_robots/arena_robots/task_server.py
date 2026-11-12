@@ -1,10 +1,10 @@
 """ROS node that exposes per-TaskKind action servers for a robot's configured bringups."""
 
 import json
-from typing import cast
 
 import rclpy
 import tf2_ros
+from arena_rclpy_mixins.params import Param, declare
 from arena_rclpy_mixins.spin import spin_node
 from rclpy.action import ActionServer
 from rclpy.node import Node
@@ -17,14 +17,15 @@ from arena_robots.task_kinds import action_type, endpoint
 
 
 class TaskServerNode(Node):
-    def __init__(self) -> None:
-        super().__init__("task_server")
+    def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
+        super().__init__("task_server", parameter_overrides=parameter_overrides)
 
-        robot_name = self.declare_parameter("robot_name", "").value
-        bringup_caps = cast(list[str], self.declare_parameter("bringup_caps", Parameter.Type.STRING_ARRAY).value)
-        bringup_kinds = cast(list[str], self.declare_parameter("bringup_kinds", Parameter.Type.STRING_ARRAY).value)
-        frame = cast(str, self.declare_parameter("frame", "").value)
-        parts = {t: [RequestPart(variant=i["variant"], mount=i.get("mount")) for i in items] for t, items in json.loads(cast(str, self.declare_parameter("parts_json", "{}").value)).items()}
+        robot_name = declare(self, Param[str]("robot_name", "", "Robot model name the task server serves (required).")).value
+        bringup_caps = declare(self, Param[list[str]]("bringup_caps", [], "Capability of each configured bringup, parallel to bringup_kinds.", type_=Parameter.Type.STRING_ARRAY)).value
+        bringup_kinds = declare(self, Param[list[str]]("bringup_kinds", [], "Bringup kind of each configured bringup, parallel to bringup_caps.", type_=Parameter.Type.STRING_ARRAY)).value
+        frame = declare(self, Param[str]("frame", "", "Frame prefix of the robot.")).value
+        parts_json = declare(self, Param[str]("parts_json", "{}", "JSON object mapping part type to the list of requested robot parts.")).value
+        parts = {t: [RequestPart(variant=i["variant"], mount=i.get("mount")) for i in items] for t, items in json.loads(parts_json).items()}
 
         if not robot_name:
             raise RuntimeError("Parameter 'robot_name' is required")

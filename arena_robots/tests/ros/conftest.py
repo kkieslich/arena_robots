@@ -116,6 +116,28 @@ class GotoRig:
         self._nav2.append(server)
         return server
 
+    def controller(self, **params: float) -> list[dict[str, float]]:
+        """Serve controller_server get/set_parameters over `params`, returning the list every set lands in."""
+        from rcl_interfaces.msg import ParameterType, ParameterValue, SetParametersResult
+        from rcl_interfaces.srv import GetParameters, SetParameters
+
+        sets: list[dict[str, float]] = []
+
+        def on_get(request: Any, response: Any) -> Any:
+            response.values = [ParameterValue(type=ParameterType.PARAMETER_DOUBLE, double_value=params[name]) if name in params else ParameterValue() for name in request.names]
+            return response
+
+        def on_set(request: Any, response: Any) -> Any:
+            values = {p.name: p.value.double_value for p in request.parameters}
+            params.update(values)
+            sets.append(values)
+            response.results = [SetParametersResult(successful=True) for _ in request.parameters]
+            return response
+
+        self.peer.create_service(GetParameters, f"{self.namespace}/controller_server/get_parameters", on_get)
+        self.peer.create_service(SetParameters, f"{self.namespace}/controller_server/set_parameters", on_set)
+        return sets
+
     def serve(self, handler_cls: type, tf_buffer: Any = None) -> Any:
         from arena_robots_msgs.action import GotoPose
         from rclpy.action import ActionClient, ActionServer
@@ -135,12 +157,13 @@ class GotoRig:
         until(future.done, what)
         return future.result()
 
-    def send(self, x: float = 0.0, *, pose_tolerance: float = 0.0) -> Any:
+    def send(self, x: float = 0.0, *, pose_tolerance: float = 0.0, yaw_tolerance: float = 0.0) -> Any:
         from arena_robots_msgs.action import GotoPose
 
         goal = GotoPose.Goal()
         goal.target.pose.position.x = x
         goal.pose_tolerance = pose_tolerance
+        goal.yaw_tolerance = yaw_tolerance
         handle = self._wait(self._client.send_goal_async(goal, feedback_callback=self.feedback.append), "goal response")
         assert handle.accepted
         return handle

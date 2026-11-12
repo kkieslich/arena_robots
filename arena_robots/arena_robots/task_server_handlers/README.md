@@ -126,3 +126,24 @@ entry.
 - **No fallback handlers.** A bringup either declares a `TaskKind` in
   `task_handlers` or it doesn't; `task_server` skips advertising that
   endpoint when missing instead of silently degrading.
+
+## Goto pose on Nav2
+
+Nav2 ends a `navigate_to_pose` goal once its controller's goal checker passes, at `xy_goal_tolerance` and `yaw_goal_tolerance` from the nav2 config. When a goal's `pose_tolerance` or `yaw_tolerance` is tighter, the handler sets that tolerance on `controller_server` for the goal and restores the configured value afterwards. Looser tolerances, including the task defaults, leave the checker alone. With a tightened checker, a Nav2 success counts only once the base has stopped within the goal's tolerances, since the base coasts after the controller stops. Otherwise the goal is sent again, at most five times.
+
+## Reach pose on MoveIt
+
+`reach_pose/moveit.py` plans every `ReachPose` goal through the arm's `move_group`. Goal fields beyond the target:
+
+| Field | Effect |
+|---|---|
+| `motion` | `""` or `free` plans with OMPL, `linear` moves the tool along a straight line (Pilz `LIN` in the `pilz_industrial_motion_planner` pipeline). `linear` with a `named_target` and any other value abort the goal. |
+| `speed` | Scales velocity and acceleration, `0.0` means `1.0`. |
+| `relative` | The target is an offset from the tool pose: the tip is looked up in `target.header.frame_id` at goal time, positions add and the offset rotation multiplies the tip rotation. A failed lookup aborts the goal with a reason naming both frames. |
+| `contact` | Collision object ids the arm may touch for this goal. The handler reads the current allowed collision matrix from `get_planning_scene`, adds each object against the child link of every chain joint, the tip link and every URDF descendant of the tip (read once per arm from `move_group`'s `robot_description`) and sends the full matrix in the request's scene diff. |
+
+Every request is sent to `move_action` with `plan_only`, from an explicit start state: the arm's last `controller_state` positions with each chain joint clamped into its URDF bounds. The simulator can rest a joint microradians outside a limit, which MoveIt's `CheckStartStateBounds` rejects, and `move_action` replaces a supplied start state with the current one whenever it also executes. When a joint is unknown or more than 0.05 rad outside, the request plans from MoveIt's current state. The planned trajectory then runs through `execute_trajectory`, whose start tolerance covers the clamp. MoveIt keeps executing when that goal is canceled, so a cancel of the reach also publishes `stop` on the arm's `trajectory_execution_event`.
+
+The handler publishes `PLANNING` before it sends the request to MoveIt, `EXECUTING` once `execute_trajectory` accepted the plan and `DONE` on success. The result carries `final_pose`, the tip pose in the target frame (the arm's base link frame for a named target), empty when the lookup fails.
+
+While the trajectory executes, the handler watches the arm's `controller_state`. A non-finite feedback position or error, or a tracking error above the arm's `stall_error` on a joint slower than `stall_speed` for `stall_time` seconds of message time, stops the execution with a `stop` on `trajectory_execution_event` and ends the reach with `STATUS_ABORTED` and the reason `arm state not finite` or `arm blocked`, naming the joint and the error.

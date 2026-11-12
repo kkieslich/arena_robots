@@ -26,6 +26,8 @@ IMU_SPECS = [
     _spec("imu", "imu", "${namespace}/imu/data", "imu_sensor"),
 ]
 
+CONTACT_SPECS = [_spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")]
+
 RBTHERON_SPECS = [
     _spec("lidar", "laserscan", "${namespace}/scan", "front_laser"),
     _spec("lidar_points", "pointcloud", "${namespace}/scan/points", "front_laser"),
@@ -70,6 +72,18 @@ class TestTopicElementsImu:
     def test_absolute_prefix(self):
         assert topic_elements(IMU_SPECS, "/model/env_0/x") == [
             ("imu_sensor", "topic", "/model/env_0/x/imu/data"),
+        ]
+
+
+class TestTopicElementsContact:
+    def test_relative_prefix(self):
+        assert topic_elements(CONTACT_SPECS, "") == [
+            ("bumper_sensor", "contact/topic", "bumper"),
+        ]
+
+    def test_absolute_prefix(self):
+        assert topic_elements(CONTACT_SPECS, "/model/env_0/x") == [
+            ("bumper_sensor", "contact/topic", "/model/env_0/x/bumper"),
         ]
 
 
@@ -134,9 +148,27 @@ class TestBridgeRows:
         specs = [_spec("orphan_image", "image", "${namespace}/orphan/image", None)]
         assert bridge_rows(specs, "") == []
 
-    def test_contact_type_produces_no_rows(self):
+    def test_contact_type_produces_a_bridged_row(self):
         specs = [_spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")]
-        assert bridge_rows(specs, "") == []
+        assert bridge_rows(specs, "") == [
+            ("bumper", "bumper", "ros_gz_interfaces/msg/Contacts", "gz.msgs.Contacts"),
+        ]
+
+    def test_contact_type_produces_a_bridged_row_with_absolute_prefix(self):
+        specs = [_spec("bumper", "contact", "${namespace}/bumper", "bumper_sensor")]
+        assert bridge_rows(specs, "/model/env_0/x") == [
+            ("/model/env_0/x/bumper", "bumper", "ros_gz_interfaces/msg/Contacts", "gz.msgs.Contacts"),
+        ]
+
+    def test_two_finger_contacts_are_two_rows(self):
+        specs = [
+            _spec("left_finger", "contact", "${namespace}/gripper_left_finger/contact", "left_contact"),
+            _spec("right_finger", "contact", "${namespace}/gripper_right_finger/contact", "right_contact"),
+        ]
+        assert bridge_rows(specs, "") == [
+            ("gripper_left_finger/contact", "gripper_left_finger/contact", "ros_gz_interfaces/msg/Contacts", "gz.msgs.Contacts"),
+            ("gripper_right_finger/contact", "gripper_right_finger/contact", "ros_gz_interfaces/msg/Contacts", "gz.msgs.Contacts"),
+        ]
 
     def test_all_bridge_kinds_are_in_bridge_types(self):
         rows = bridge_rows(RBTHERON_SPECS, "")

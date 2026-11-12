@@ -8,10 +8,9 @@ action and re-issues them so `/plan` tracks the robot as it moves.
 
 from __future__ import annotations
 
-import typing
-
 import rclpy
 from action_msgs.msg import GoalStatus
+from arena_rclpy_mixins.params import Param, Range, declare
 from arena_rclpy_mixins.spin import spin_node
 from geometry_msgs.msg import PoseStamped
 from nav2_msgs.action import ComputePathToPose
@@ -26,11 +25,11 @@ class GoalToPlanBridge(Node):
     def __init__(self) -> None:
         super().__init__("goal_to_plan_bridge")
 
-        goal_topic = typing.cast(str, self.declare_parameter("goal_topic", "goal_pose").value)
-        action_name = typing.cast(str, self.declare_parameter("action_name", "compute_path_to_pose").value)
-        replan_period = float(typing.cast(float, self.declare_parameter("replan_period", 1.0).value))
-        self._inflight_timeout = float(typing.cast(float, self.declare_parameter("inflight_timeout", 5.0).value))
-        self._planner_id = self.declare_parameter("planner_id", "").value
+        goal_topic = declare(self, Param[str]("goal_topic", "goal_pose", "Topic of the PoseStamped goals to plan to.")).value
+        action_name = declare(self, Param[str]("action_name", "compute_path_to_pose", "Name of the ComputePathToPose action served by planner_server.")).value
+        replan_period = declare(self, Param[float]("replan_period", 1.0, "Period in wall seconds between plan requests for the current goal.", constraint=Range(lo=0.0, lo_open=True))).value
+        self._inflight_timeout = declare(self, Param[float]("inflight_timeout", 5.0, "Wall seconds without an answer after which a plan request is re-issued.", constraint=Range(lo=0.0, lo_open=True))).value
+        self._planner_id = declare(self, Param[str]("planner_id", "", "Planner plugin id used for the requests (empty = planner_server default).")).value
 
         self._goal: PoseStamped | None = None
         self._goal_seq: int = 0

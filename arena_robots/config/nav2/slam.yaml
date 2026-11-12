@@ -1,0 +1,25 @@
+# slam_toolbox for robot.mobile.mapping:=slam: maps from the lidar while driving and takes the robot
+# pose from the simulator's map -> base, so it publishes no TF and matches no scans.
+slam_toolbox:
+  ros__parameters:
+    use_sim_time: True
+    mode: mapping
+    use_lifecycle_manager: true  # configured and activated by nav2's lifecycle manager, before the costmaps
+    map_frame: map
+    odom_frame: map
+    base_frame: ${frame:-}${base_frame:-base_link}
+    scan_topic: ${scan_topic}
+    transform_publish_period: 0.0  # 0 = never publish map -> odom, the simulator owns it
+    use_scan_matching: false
+    do_loop_closing: false
+    use_map_saver: false
+    map_update_interval: 1.0
+    resolution: 0.05
+    max_laser_range: ${slam_range:-12.0}
+    minimum_time_interval: 0.2
+    minimum_travel_distance: 0.1
+    minimum_travel_heading: 0.1
+    throttle_scans: 1
+    tf_buffer_duration: 30.0
+    stack_size_to_use: 40000000
+    enable_interactive_mode: false

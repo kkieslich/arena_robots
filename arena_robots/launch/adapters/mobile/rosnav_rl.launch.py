@@ -1,6 +1,6 @@
 """rosnav_rl adapter launch: single inference node, no nav2."""
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch_ros.actions import Node
 
 from launch import LaunchDescription
@@ -10,19 +10,19 @@ def generate_launch_description():
     ld_items: list = []
     LaunchArgument.auto_append(ld_items)
 
-    LaunchArgument("robot")
-    namespace = LaunchArgument("namespace")
-    use_sim_time = LaunchArgument("use_sim_time")
-    frame = LaunchArgument("frame")
-    base_frame = LaunchArgument("base_frame")
-    arena_env_node = LaunchArgument("arena_env_node", default_value="")
-    agent = LaunchArgument("agent")
-    node_name = LaunchArgument("node_name", default_value="rosnav_rl_inference")
-    control_rate = LaunchArgument("control_rate", default_value="10.0")
-    min_lookahead_dist = LaunchArgument("min_lookahead_dist", default_value="0.5")
-    max_lookahead_dist = LaunchArgument("max_lookahead_dist", default_value="2.5")
-    lookahead_time = LaunchArgument("lookahead_time", default_value="1.5")
-    train_mode = LaunchArgument("train_mode", default_value="false")
+    LaunchArgument("robot", description="Robot model name.")
+    namespace = LaunchArgument("namespace", description="ROS namespace of the robot.")
+    use_sim_time = LaunchArgument("use_sim_time", description="Whether nodes follow the simulator clock.")
+    frame = LaunchArgument("frame", description="Frame prefix of the robot.")
+    base_frame = LaunchArgument("base_frame", description="Base link frame of the robot.")
+    arena_env_node = LaunchArgument("arena_env_node", default_value="", description="Name of the env node whose map and services the robot uses.")
+    agent = LaunchArgument("agent", description="Name of the DRL agent directory the controller loads weights from.")
+    node_name = LaunchArgument("node_name", default_value="rosnav_rl_inference", description="Name of the DRL inference node.")
+    control_rate = LaunchArgument("control_rate", default_value="10.0", description="Control loop rate of the inference node in Hz.")
+    min_lookahead_dist = LaunchArgument("min_lookahead_dist", default_value="0.5", description="Minimum lookahead distance along the global plan in meters.")
+    max_lookahead_dist = LaunchArgument("max_lookahead_dist", default_value="2.5", description="Maximum lookahead distance along the global plan in meters.")
+    lookahead_time = LaunchArgument("lookahead_time", default_value="1.5", description="Lookahead time along the global plan in seconds.")
+    train_mode = LaunchArgument("train_mode", default_value="false", description="Whether the robot is driven by a DRL agent in training (true or false).")
 
     inference_node = Node(
         package="rosnav_rl",

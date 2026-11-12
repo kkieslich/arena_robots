@@ -24,6 +24,14 @@ def _load_goto_pose_nav2() -> type:
     return GotoPoseHandlerNav2
 
 
+def scan_topic(sensors: list[SensorSpec], namespace: str) -> str:
+    """The first laserscan topic among the sensors, its namespace placeholder resolved, '' without one."""
+    for sensor in sensors:
+        if str(sensor.type) == SensorType.LASERSCAN.value:
+            return sensor.topic.replace("${namespace}", namespace)
+    return ""
+
+
 @BringupMeta.attach(requires={"mobile"}, cap="mobile")
 class Nav2Bringup(Bringup):
     kind = "nav2"
@@ -51,6 +59,7 @@ class Nav2Bringup(Bringup):
         sensors: list[SensorSpec] | None = None,
         params_overlay: str = "",
         agent: str = "",
+        mapping: str = "static",
         **_: object,
     ) -> list[Action]:
         agent_name = agent or str(self.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
@@ -82,6 +91,8 @@ class Nav2Bringup(Bringup):
             "env_namespace": env_namespace,
             "params_overlay": params_overlay,
             "agent": agent_name,
+            "mapping": mapping,
+            "scan_topic": scan_topic(sensors or [], str(self.namespace)),
         }
         if sensors is not None:
             geometry = sensor_geometry(self.robot, self.parts)

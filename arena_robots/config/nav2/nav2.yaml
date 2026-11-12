@@ -159,7 +159,7 @@ local_costmap:
         "${**observation_sources_dict}": ''
       static_layer:
         map_subscribe_transient_local: True
-        map_topic: ${arena_env_node}/map
+        map_topic: ${map_topic}
       always_send_full_costmap: True
   local_costmap_client:
     ros__parameters:
@@ -187,7 +187,7 @@ global_costmap:
       static_layer:
         plugin: "nav2_costmap_2d::StaticLayer"
         map_subscribe_transient_local: True
-        map_topic: ${arena_env_node}/map
+        map_topic: ${map_topic}
       obstacle_layer:
         plugin: "nav2_costmap_2d::ObstacleLayer"
         enabled: True
