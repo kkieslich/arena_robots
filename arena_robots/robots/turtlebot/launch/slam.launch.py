@@ -17,8 +17,9 @@
 
 from ament_index_python.packages import get_package_share_directory
 
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction
+from launch.actions import GroupAction
 from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
@@ -28,14 +29,14 @@ from nav2_common.launch import RewrittenYaml
 
 
 ARGUMENTS = [
-    DeclareLaunchArgument('use_sim_time', default_value='false',
+    LaunchArgument('use_sim_time', default_value='false',
                           choices=['true', 'false'],
-                          description='Use sim time'),
-    DeclareLaunchArgument('sync', default_value='true',
+                          description='Use the sim clock.'),
+    LaunchArgument('sync', default_value='true',
                           choices=['true', 'false'],
-                          description='Use synchronous SLAM'),
-    DeclareLaunchArgument('namespace', default_value='',
-                          description='Robot namespace')
+                          description='Use synchronous SLAM.'),
+    LaunchArgument('namespace', default_value='',
+                          description='Robot namespace.')
 ]
 
 
@@ -45,11 +46,11 @@ def generate_launch_description():
     namespace = LaunchConfiguration('namespace')
     sync = LaunchConfiguration('sync')
 
-    slam_params_arg = DeclareLaunchArgument(
+    slam_params_arg = LaunchArgument(
         'params',
         default_value=PathJoinSubstitution(
             [pkg_turtlebot4_navigation, 'config', 'slam.yaml']),
-        description='Robot namespace')
+        description='Slam parameters file.')
 
     slam_params = RewrittenYaml(
         source_file=LaunchConfiguration('params'),

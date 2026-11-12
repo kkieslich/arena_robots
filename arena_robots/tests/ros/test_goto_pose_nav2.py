@@ -146,3 +146,58 @@ class TestGotoPoseHandlerNav2Execute:
         acquired, released = goto_rig.registrations
         assert [(channel.hard, channel.period_s) for channel in acquired] == [(True, pytest.approx(0.1))]
         assert released == []
+
+
+_XY = "goal_checker.xy_goal_tolerance"
+_YAW = "goal_checker.yaw_goal_tolerance"
+
+
+class TestGotoPoseHandlerNav2Tolerance:
+    def test_tighter_tolerances_set_the_goal_checker_for_the_goal_and_restore_it(self, goto_rig):
+        from tf2_ros import Buffer
+
+        from arena_robots_msgs.action import GotoPose
+
+        sets = goto_rig.controller(**{_XY: 0.25, _YAW: 0.25})
+        goto_rig.nav2()
+        buffer = Buffer()
+        goto_rig.robot_at(buffer, 0.0)
+        goto_rig.serve(_handler(), tf_buffer=buffer)
+        wrapped = goto_rig.result(goto_rig.send(pose_tolerance=0.05, yaw_tolerance=0.04))
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert sets == [{_XY: pytest.approx(0.05), _YAW: pytest.approx(0.04)}, {_XY: 0.25, _YAW: 0.25}]
+
+    def test_looser_tolerances_leave_the_goal_checker_alone(self, goto_rig):
+        from arena_robots_msgs.action import GotoPose
+
+        sets = goto_rig.controller(**{_XY: 0.25, _YAW: 0.25})
+        goto_rig.nav2()
+        goto_rig.serve(_handler())
+        wrapped = goto_rig.result(goto_rig.send(pose_tolerance=1.0, yaw_tolerance=0.5))
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+        assert sets == []
+
+    def test_base_settled_outside_the_tolerance_is_sent_again(self, goto_rig):
+        from arena_robots.task_server_handlers.goto_pose.nav2 import _PRECISE_RESENDS
+        from arena_robots_msgs.action import GotoPose
+        from tf2_ros import Buffer
+
+        goto_rig.controller(**{_XY: 0.25, _YAW: 0.25})
+        nav2 = goto_rig.nav2()
+        buffer = Buffer()
+        goto_rig.robot_at(buffer, 0.1)
+        goto_rig.serve(_handler(), tf_buffer=buffer)
+        wrapped = goto_rig.result(goto_rig.send(pose_tolerance=0.05))
+        assert nav2.received == 1 + _PRECISE_RESENDS
+        assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
+
+    def test_base_settled_within_the_tolerance_is_not_sent_again(self, goto_rig):
+        from tf2_ros import Buffer
+
+        goto_rig.controller(**{_XY: 0.25, _YAW: 0.25})
+        nav2 = goto_rig.nav2()
+        buffer = Buffer()
+        goto_rig.robot_at(buffer, 0.03)
+        goto_rig.serve(_handler(), tf_buffer=buffer)
+        goto_rig.result(goto_rig.send(pose_tolerance=0.05))
+        assert nav2.received == 1

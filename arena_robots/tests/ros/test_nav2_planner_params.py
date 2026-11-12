@@ -41,6 +41,8 @@ def _planner_params(robot: str, global_planner: str) -> dict:
             "sensors_json": "",
             "params_overlay": "",
             "agent": "",
+            "mapping": "static",
+            "scan_topic": "",
         }
     )
     (setup,) = [e for e in ld.entities if isinstance(e, OpaqueFunction)]

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import array
 import functools
-import typing
 
 import numpy as np
 import rclpy
+from arena_rclpy_mixins.params import Param, Range, declare
 from arena_rclpy_mixins.spin import spin_node
 from geometry_msgs.msg import TransformStamped
 from rclpy.duration import Duration
@@ -78,26 +78,22 @@ class MeshNavObstacles(Node):
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("meshnav_obstacles", parameter_overrides=parameter_overrides)
 
-        def text(name: str, default: str) -> str:
-            return str(self.declare_parameter(name, default).value)
-
-        def number(name: str, default: float) -> float:
-            return float(typing.cast(float, self.declare_parameter(name, default).value))
-
-        self._odom_frame = text("odom_frame", "odom")
-        self._base_frame = text("base_frame", "base_link")
+        self._odom_frame = declare(self, Param[str]("odom_frame", "odom", "Frame the obstacle points are published in.")).value
+        self._base_frame = declare(self, Param[str]("base_frame", "base_link", "Base link frame of the robot.")).value
+        mesh_file = declare(self, Param[str]("mesh_file", "", "Path of the PLY nav mesh the walkable surface is built from.")).value
+        resolution = declare(self, Param[float]("resolution", 0.1, "Grid resolution of the walkable surface in m.", constraint=Range(lo=0.0, lo_open=True))).value
         self._filter = ObstacleFilter(
-            surface=WalkingSurface.from_ply(text("mesh_file", ""), number("resolution", 0.1)),
-            min_height=number("min_obstacle_height", 0.1),
-            max_height=number("max_obstacle_height", 0.7),
-            max_step=number("max_step", 0.1),
-            obstacle_range=number("obstacle_range", 9.0),
-            self_radius=number("self_radius", 0.3),
+            surface=WalkingSurface.from_ply(mesh_file, resolution),
+            min_height=declare(self, Param[float]("min_obstacle_height", 0.1, "Minimum height above the walkable surface for a point to count as obstacle in m.")).value,
+            max_height=declare(self, Param[float]("max_obstacle_height", 0.7, "Maximum height above the walkable surface for a point to count as obstacle in m.")).value,
+            max_step=declare(self, Param[float]("max_step", 0.1, "Largest height step the walkable surface explains away in m.", constraint=Range(lo=0.0))).value,
+            obstacle_range=declare(self, Param[float]("obstacle_range", 9.0, "Maximum range of the sensor points kept in m.", constraint=Range(lo=0.0, lo_open=True))).value,
+            self_radius=declare(self, Param[float]("self_radius", 0.3, "Radius around the robot whose points are dropped in m.", constraint=Range(lo=0.0))).value,
         )
-        self._decay = Duration(seconds=number("obstacle_decay", 1.0))
-        scans = list(self.declare_parameter("laserscan_topics", Parameter.Type.STRING_ARRAY).value or [])
-        clouds = list(self.declare_parameter("pointcloud_topics", Parameter.Type.STRING_ARRAY).value or [])
-        rate = number("publish_rate", 10.0)
+        self._decay = Duration(seconds=declare(self, Param[float]("obstacle_decay", 1.0, "Seconds an obstacle observation is kept after its last update.", constraint=Range(lo=0.0))).value)
+        scans = list(declare(self, Param[list[str]]("laserscan_topics", [], "Laserscan topics merged into the obstacle points.", type_=Parameter.Type.STRING_ARRAY)).value)
+        clouds = list(declare(self, Param[list[str]]("pointcloud_topics", [], "Pointcloud topics merged into the obstacle points.", type_=Parameter.Type.STRING_ARRAY)).value)
+        rate = declare(self, Param[float]("publish_rate", 10.0, "Publish rate of the merged obstacle points in Hz.", constraint=Range(lo=0.0, lo_open=True))).value
 
         self._tf = Buffer()
         self._tf_listener = TransformListener(self._tf, self)

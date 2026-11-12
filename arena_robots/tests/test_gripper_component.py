@@ -12,8 +12,8 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 import pytest
-from arena_robots.assembly import build_request, resolve
-from arena_robots.catalog import Catalog, ComponentSpec, render_control_joints, render_effective_control, render_wrapper_xacro
+from arena_robots.assembly import Mount, Placement, ResolvedAssembly, build_request, resolve
+from arena_robots.catalog import Catalog, ComponentSpec, render_control_joints, render_effective_control, render_effective_sensors, render_wrapper_xacro
 from arena_robots.Robot import RobotIdentifier
 from arena_simulation_setup.utils.models.urdf import _inject_ros2_control_joints
 
@@ -121,6 +121,19 @@ class TestGripperChainsOntoArmTip:
         assert grippers["top_tool"].controller == "top_tool_controller"
         assert grippers["top_tool"].positions == {"open": 0.0, "close": 0.8}
         assert grippers["top_tool"].max_effort == 50.0
+
+
+@pytest.mark.parametrize(
+    ("overrides", "topics"),
+    [
+        ({}, ["${namespace}/tool_left_finger/contact", "${namespace}/tool_right_finger/contact"]),
+        ({"topic": "grip"}, ["${namespace}/grip_left_finger/contact", "${namespace}/grip_right_finger/contact"]),
+    ],
+)
+def test_finger_contact_topics_stay_distinct(overrides: dict[str, str], topics: list[str]) -> None:
+    mount = Mount(name="tool", parent="tool0", xyz=(0.0, 0.0, 0.0), rpy=(0.0, 0.0, 0.0), accepts=frozenset({"gripper"}))
+    resolved = ResolvedAssembly(placements=[Placement(type="gripper", variant="robotiq_2f_85", mount=mount, overrides=overrides)])
+    assert [s.topic for s in render_effective_sensors(resolved, Catalog(root=COMPONENTS_ROOT), prefix="")] == topics
 
 
 class TestRbkairosGripperMount:

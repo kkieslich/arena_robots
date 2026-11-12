@@ -26,6 +26,8 @@ def output_topics(sensor_type: str, topic: str, camera_info_topic: str | None = 
         return {'laserscan': topic, 'pointcloud': f'{topic}/points'}
     if sensor_type == 'imu':
         return {'imu': topic}
+    if sensor_type == 'contact':
+        return {'contact': topic}
     if sensor_type == 'camera':
         return {'image': topic, 'camera_info': camera_info_topic or f'{parent}/camera_info'}
     if sensor_type == 'depth':

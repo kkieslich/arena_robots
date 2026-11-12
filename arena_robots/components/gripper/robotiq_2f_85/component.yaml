@@ -9,6 +9,25 @@ xacro:
     parent: "${prefix}${parent}"
     include_ros2_control: "false"
     sim_ignition: "${gazebo_ignition}"
+sensor:
+  gz:
+    - name: "${name:-${mount}}_left_finger"
+      type: contact
+      topic: "${topic:-${mount}}_left_finger/contact"
+      frame: "${prefix}${mount}_robotiq_85_left_finger_tip_link"
+      sensor: "${prefix}${mount}_left_finger_contact"
+      define:
+        collision: "${prefix}${mount}_robotiq_85_left_finger_tip_link_collision"
+        update_rate: 100
+
+    - name: "${name:-${mount}}_right_finger"
+      type: contact
+      topic: "${topic:-${mount}}_right_finger/contact"
+      frame: "${prefix}${mount}_robotiq_85_right_finger_tip_link"
+      sensor: "${prefix}${mount}_right_finger_contact"
+      define:
+        collision: "${prefix}${mount}_robotiq_85_right_finger_tip_link_collision"
+        update_rate: 100
 
 ros2_control:
   joints:

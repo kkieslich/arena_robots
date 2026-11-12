@@ -204,6 +204,18 @@ planning group unless the package's kinematics file already names it, and maps t
 `tiago` declares its own `srdf/arm.srdf.xacro` and `srdf/joint_limits.yaml` this way; the `fr3`
 component does the same under `components/arm/fr3`.
 
+The pipelines of a block without `package` are OMPL (the default) and Pilz, which `motion: linear`
+reaches use. `moveit.cartesian_limits` sets the Pilz limits per arm over the defaults
+`max_trans_vel: 0.5`, `max_trans_acc: 1.0`, `max_trans_dec: -1.0`, `max_rot_vel: 1.57`. Four
+top-level arm keys tune reaches and scene sync, each read with a default:
+
+| Key | Default | Meaning |
+|---|---|---|
+| `stall_error` | 0.2 | Tracking error in rad above which the arm counts as blocked |
+| `stall_speed` | 0.05 | Joint speed in rad/s below which that joint counts as stopped, so an arm that lags while moving is not blocked |
+| `stall_time` | 0.5 | Seconds the error must stay above `stall_error` on a stopped joint before the reach fails with `arm blocked` |
+| `scene_radius` | 1.5 | Radius in m around the base within which episode objects enter the planning scene |
+
 For platforms that ship an upstream SRDF, structural primitives can be derived
 from it; `controller:` and adapter sub-blocks stay authored:
 

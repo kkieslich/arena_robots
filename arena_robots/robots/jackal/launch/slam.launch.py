@@ -15,8 +15,8 @@
 # @author Roni Kreinin (rkreinin@clearpathrobotics.com)
 
 
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 
 from launch_ros.actions import Node
@@ -24,11 +24,11 @@ from launch_ros.substitutions import FindPackageShare
 
 
 ARGUMENTS = [
-    DeclareLaunchArgument('use_sim_time', default_value='false',
-                          choices=['true', 'false'],
-                          description='Use sim time'),
-    DeclareLaunchArgument('yaml_path', default_value='',
-                          description='path for the slam yaml'),
+    LaunchArgument('use_sim_time', default_value='false',
+                   choices=['true', 'false'],
+                   description='Use the sim clock.'),
+    LaunchArgument('yaml_path', default_value='',
+                   description='Slam yaml file to load.'),
 ]
 
 

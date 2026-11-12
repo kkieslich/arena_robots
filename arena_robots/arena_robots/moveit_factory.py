@@ -171,6 +171,8 @@ def _render_joint_limits(jl_path: Path, context: dict[str, str]) -> Path:
 
 
 _SEGMENT_FRACTION = 0.002
+_PILZ = "pilz_industrial_motion_planner"
+_CARTESIAN_LIMITS = {"max_trans_vel": 0.5, "max_trans_acc": 1.0, "max_trans_dec": -1.0, "max_rot_vel": 1.57}
 _KDL_SOLVER = {
     "kinematics_solver": "kdl_kinematics_plugin/KDLKinematicsPlugin",
     "kinematics_solver_search_resolution": 0.005,
@@ -285,11 +287,18 @@ def build_moveit_params(robot_name: str, tf_prefix: str = "", parts: dict[str, l
     group = arm.planning_group or arm.name
     builder = MoveItConfigsBuilder(robot_name=builder_name, package_name=config_pkg).robot_description(file_path=str(urdf_abs), mappings=mappings).robot_description_semantic(str(srdf_abs), mappings=mappings).joint_limits(str(jl_abs)).trajectory_execution(file_path=str(_write_yaml(_controller_params(arm))))  # pyright: ignore[reportArgumentType]
     if not pkg:
-        builder = builder.robot_description_kinematics(str(_write_yaml({}))).planning_pipelines(pipelines=["ompl"])
+        limits = {**_CARTESIAN_LIMITS, **(mv.get("cartesian_limits") or {})}
+        builder = builder.robot_description_kinematics(str(_write_yaml({}))).planning_pipelines(pipelines=["ompl", _PILZ], default_planning_pipeline="ompl").pilz_cartesian_limits(str(_write_yaml({"cartesian_limits": limits})))
     params = builder.to_moveit_configs().to_dict()  # pyright: ignore[reportArgumentType]
 
     if not pkg:
         params.setdefault("ompl", {}).setdefault(group, {})["longest_valid_segment_fraction"] = _SEGMENT_FRACTION
+
+    planning = params.get("robot_description_planning") or {}
+    for limits in (planning.get("joint_limits") or {}).values():
+        for key, value in limits.items():
+            if isinstance(value, int) and not isinstance(value, bool):
+                limits[key] = float(value)
 
     kinematics = params.get("robot_description_kinematics") or {}
     kinematics.setdefault(group, dict(_KDL_SOLVER))

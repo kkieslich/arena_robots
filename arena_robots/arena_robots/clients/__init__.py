@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, ClassVar
 if TYPE_CHECKING:
     import tf2_ros
     from arena_rclpy_mixins.Async import AsyncNode
+    from rclpy.task import Future
 
     from arena_robots.Robot import RobotView
 
@@ -58,7 +59,8 @@ class Client(ABC):
     @abstractmethod
     def is_done(self) -> bool | None: ...
 
-    def cancel(self) -> None:
+    def cancel(self) -> Future | None:
+        """Request cancellation of the in-flight goal, the future resolves when the server answers."""
         raise NotImplementedError
 
     @property

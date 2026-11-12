@@ -1,6 +1,6 @@
 """Auxiliary node for the rosnav_rl local planner (the action server behind the DRLController get_command service)."""
 
-from arena_bringup.substitutions import LaunchArgument
+from arena_rclpy_mixins.launch_argument import LaunchArgument
 from launch import LaunchContext, LaunchDescription
 from launch.actions import OpaqueFunction
 from launch_ros.actions import Node
@@ -10,11 +10,11 @@ def generate_launch_description() -> LaunchDescription:
     ld_items: list = []
     LaunchArgument.auto_append(ld_items)
 
-    namespace = LaunchArgument('namespace')
-    frame = LaunchArgument('frame')
-    base_frame = LaunchArgument('base_frame')
-    use_sim_time = LaunchArgument('use_sim_time')
-    agent = LaunchArgument('agent')
+    namespace = LaunchArgument('namespace', description='ROS namespace of the robot.')
+    frame = LaunchArgument('frame', description='Frame prefix of the robot.')
+    base_frame = LaunchArgument('base_frame', description='Base link frame of the robot.')
+    use_sim_time = LaunchArgument('use_sim_time', description='Whether nodes follow the simulator clock.')
+    agent = LaunchArgument('agent', description='Name of the DRL agent directory the controller loads weights from.')
 
     def _setup(context: LaunchContext, *args: object, **kwargs: object) -> list[Node]:
         ns = namespace.substitution.perform(context)

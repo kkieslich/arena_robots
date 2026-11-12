@@ -566,3 +566,40 @@ class TestRenderEffectiveControl:
         merged, extra = render_effective_control(resolved, RBVOGUI_BASE_CONTROL, catalog, prefix="")
 
         assert merged["arm_controller"]["ros__parameters"]["joints"] == ["arm_shoulder_pan_joint", "arm_shoulder_lift_joint"]
+
+
+def _contact_component(sensor: str | None) -> dict:
+    entry: dict[str, object] = {
+        "name": "${mount}_finger",
+        "type": "contact",
+        "topic": "${mount}_finger/contact",
+        "frame": "${prefix}${mount}_tip_link",
+        "define": {"collision": "${prefix}${mount}_tip_link_collision", "update_rate": 100},
+    }
+    if sensor is not None:
+        entry["sensor"] = sensor
+    return {
+        "xacro": {"include": "gripper.xacro", "macro": "gripper", "attach": {"parent": "${prefix}${parent}"}},
+        "sensor": {"gz": [entry]},
+    }
+
+
+class TestRenderWrapperXacroContactDefine:
+    def _render(self, tmp_path: Path, sensor: str | None) -> str:
+        _write_component(tmp_path / "components", "gripper", "test", _contact_component(sensor))
+        catalog = Catalog(root=tmp_path / "components")
+        view = _write_robot_view(tmp_path)
+        resolved = ResolvedAssembly(placements=[Placement(type="gripper", variant="test", mount=_mount("grip", ["gripper"]))])
+        return render_wrapper_xacro(view, resolved, catalog=catalog)
+
+    def test_sensor_element_takes_the_spec_sensor_name(self, tmp_path: Path):
+        wrapper = self._render(tmp_path, "${prefix}${mount}_contact")
+
+        assert '<gazebo reference="$(arg prefix)grip_tip_link">' in wrapper
+        assert '<sensor name="$(arg prefix)grip_contact" type="contact">' in wrapper
+        assert "<collision>$(arg prefix)grip_tip_link_collision</collision>" in wrapper
+        assert "<update_rate>100</update_rate>" in wrapper
+
+    def test_define_without_sensor_name_raises(self, tmp_path: Path):
+        with pytest.raises(ValueError, match="'sensor' is required"):
+            self._render(tmp_path, None)

@@ -508,6 +508,26 @@ class ArmSpec(InstanceSpec):
         return ws if isinstance(ws, dict) else None
 
     @property
+    def stall_error(self) -> float:
+        """Tracking error in rad above which the arm counts as blocked."""
+        return float(self.raw.get("stall_error", 0.2))
+
+    @property
+    def stall_speed(self) -> float:
+        """Joint speed in rad/s below which a joint with a stall error counts as stopped."""
+        return float(self.raw.get("stall_speed", 0.05))
+
+    @property
+    def stall_time(self) -> float:
+        """Seconds the tracking error must stay above `stall_error` before a reach fails as blocked."""
+        return float(self.raw.get("stall_time", 0.5))
+
+    @property
+    def scene_radius(self) -> float:
+        """Radius in m around the base within which episode objects enter the planning scene."""
+        return float(self.raw.get("scene_radius", 1.5))
+
+    @property
     def joint_limits(self) -> dict[str, dict[str, object]]:
         """``{joint_name: limits}`` from the moveit joint_limits file, empty when not declared."""
         mv = self.raw.get("moveit")
