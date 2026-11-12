@@ -48,8 +48,8 @@ class PowerPublisher(Node):
         self._num_wheels: int = declare(self, Param[int]("num_wheels", 1, "Number of wheels sharing the rolling resistance (0 = no rolling resistance).", constraint=Range(lo=0))).value
 
         # Driving power estimated from odometry, only for joint states without velocity and effort
-        self._odom_linear_w_per_mps: float = float(typing.cast(float, self.declare_parameter("odometry_linear_w_per_mps", 0.0).value))
-        self._odom_angular_w_per_radps: float = float(typing.cast(float, self.declare_parameter("odometry_angular_w_per_radps", 0.0).value))
+        self._odom_linear_w_per_mps: float = declare(self, Param[float]("odometry_linear_w_per_mps", 0.0, "Electrical driving power per m/s of odometry speed in W*s/m, used when joint states carry no velocity or effort (0 = off).", constraint=Range(lo=0.0))).value
+        self._odom_angular_w_per_radps: float = declare(self, Param[float]("odometry_angular_w_per_radps", 0.0, "Electrical driving power per rad/s of odometry yaw rate in W*s/rad, used when joint states carry no velocity or effort (0 = off).", constraint=Range(lo=0.0))).value
         self._estimates_from_odometry: bool = self._odom_linear_w_per_mps > 0.0 or self._odom_angular_w_per_radps > 0.0
         self._odom: tuple[float, float, float] | None = None  # stamp in s, |v| in m/s, |omega| in rad/s
 
