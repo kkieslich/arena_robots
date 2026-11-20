@@ -1,0 +1,20 @@
+<!--
+  navigate_w_replanning_time with Nav2's planner recovery: replans the global path at 4 Hz, and when planning fails,
+  clears the global costmap once and plans again. Obstacles marked in the global costmap stay until a later ray clears
+  them, so marks the robot drove away from can close a passage for every goal; the clear drops them, and the sensors
+  mark again what they still see. No spin, wait or backup.
+-->
+
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="NavigateWithReplanning">
+      <RateController hz="4.0">
+        <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased"/>
+          <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+        </RecoveryNode>
+      </RateController>
+      <FollowPath path="{path}"  controller_id="FollowPath"/>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>
