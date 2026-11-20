@@ -1,5 +1,6 @@
 """The Nav2 inter planners (behavior trees under config/nav2/interplanners): each config loads its own tree, and
-navigate_w_replanning_time_clear is navigate_w_replanning_time plus a global costmap clear when planning fails."""
+navigate_w_replanning_time_clear is navigate_w_replanning_time plus Nav2's planner recovery: a global costmap clear when
+planning fails with an error a clear can help."""
 
 from __future__ import annotations
 
@@ -16,6 +17,9 @@ INTERPLANNERS = NAV2 / "interplanners"
 CLEAR = INTERPLANNERS / "navigate_w_replanning_time_clear"
 BASE = INTERPLANNERS / "navigate_w_replanning_time"
 GLOBAL_CLEAR_SERVICE = "global_costmap/clear_entirely_global_costmap"
+ERROR_CODE = "{compute_path_error_code}"
+#: BT.CPP's own control nodes, which nav2_tree_nodes.xml does not list
+BTCPP_BUILTINS = {"Sequence": set()}
 
 
 def _config(folder: Path) -> dict:
@@ -53,15 +57,19 @@ def test_config_loads_its_own_tree(folder):
     assert (INTERPLANNERS / folder / "interplanner_behavior.xml").is_file()
 
 
-def test_clear_tree_clears_the_global_costmap_once_when_planning_fails():
+def test_clear_tree_clears_the_global_costmap_once_when_planning_fails_and_a_clear_can_help():
     top = _tree(CLEAR)
     assert top.tag == "PipelineSequence"
     rate, follow = list(top)
     assert rate.tag == "RateController" and float(rate.get("hz")) == 4.0
     (recovery,) = list(rate)
     assert recovery.tag == "RecoveryNode" and int(recovery.get("number_of_retries")) == 1
-    plan, clear = list(recovery)
+    plan, recover = list(recovery)
     assert plan.tag == "ComputePathToPose" and plan.get("planner_id") == "GridBased"
+    assert plan.get("error_code_id") == ERROR_CODE
+    assert recover.tag == "Sequence"
+    gate, clear = list(recover)
+    assert gate.tag == "WouldAPlannerRecoveryHelp" and gate.get("error_code") == ERROR_CODE
     assert clear.tag == "ClearEntireCostmap" and clear.get("service_name") == GLOBAL_CLEAR_SERVICE
     assert follow.tag == "FollowPath" and not list(follow)
 
@@ -70,6 +78,7 @@ def test_clear_tree_is_the_replanning_tree_plus_the_recovery():
     top = _tree(CLEAR)
     recovery = top.find("RateController/RecoveryNode")
     plan = recovery.find("ComputePathToPose")
+    del plan.attrib["error_code_id"]  # an output port only: it fills the error code the gate reads
     top.find("RateController").remove(recovery)
     top.find("RateController").append(plan)
     assert _shape(top) == _shape(_tree(BASE))
@@ -96,16 +105,26 @@ def test_clear_service_resolves_in_the_robot_namespace():
 def test_clear_config_is_the_replanning_config_with_its_own_tree():
     clear, base = _config(CLEAR), _config(BASE)
     assert {k: v for k, v in clear.items() if k != "default_nav_to_pose_bt_xml"} == {k: v for k, v in base.items() if k != "default_nav_to_pose_bt_xml"}
-    assert {"nav2_clear_costmap_service_bt_node", "nav2_recovery_node_bt_node", "nav2_rate_controller_bt_node", "nav2_pipeline_sequence_bt_node"} <= set(clear["plugin_lib_names"])
+    assert {
+        "nav2_clear_costmap_service_bt_node",
+        "nav2_recovery_node_bt_node",
+        "nav2_rate_controller_bt_node",
+        "nav2_pipeline_sequence_bt_node",
+        "nav2_would_a_planner_recovery_help_condition_bt_node",
+    } <= set(clear["plugin_lib_names"])
+    assert "compute_path_error_code" in clear["error_code_names"]
 
 
-def test_clear_service_name_is_the_one_of_the_nav2_default_tree():
+def test_clear_recovery_is_the_planner_recovery_of_the_nav2_default_tree():
     share = _share("nav2_bt_navigator")
     if share is None:
         pytest.skip("nav2_bt_navigator not installed")
     default = ET.parse(share / "behavior_trees" / "navigate_to_pose_w_replanning_and_recovery.xml").getroot()
-    names = {node.get("name"): node.get("service_name") for node in default.iter("ClearEntireCostmap")}
-    assert names["ClearGlobalCostmap-Context"] == GLOBAL_CLEAR_SERVICE
+    (theirs,) = [node for node in default.iter("RecoveryNode") if node.get("name") == "ComputePathToPose"]
+    ours = _tree(CLEAR).find("RateController/RecoveryNode")
+    # the same but for the planner: the default tree's comes from its PlannerSelector
+    theirs.find("ComputePathToPose").set("planner_id", "GridBased")
+    assert _shape(ours) == _shape(theirs)
 
 
 def test_clear_tree_uses_only_known_nodes_and_ports():
@@ -113,7 +132,7 @@ def test_clear_tree_uses_only_known_nodes_and_ports():
     if share is None:
         pytest.skip("nav2_behavior_tree not installed")
     model = ET.parse(share / "nav2_tree_nodes.xml").getroot().find("TreeNodesModel")
-    ports = {node.get("ID"): {p.get("name") for p in node} for node in model}
+    ports = {node.get("ID"): {p.get("name") for p in node} for node in model} | BTCPP_BUILTINS
     for node in _tree(CLEAR).iter():
         assert node.tag in ports, node.tag
         assert set(node.attrib) - {"name"} <= ports[node.tag], (node.tag, node.attrib)
