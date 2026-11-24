@@ -1,0 +1,11 @@
+prefix: ""
+mounts:
+  laser:
+    parent: base_link
+    xyz: [0.275, 0.0, 0.14]  # upstream laser x, on top of the chassis box
+    rpy: [0, 0, 0]
+    accepts: [lidar]
+defaults:
+  lidar:
+    - variant: hokuyo_ust20lx
+      mount: laser

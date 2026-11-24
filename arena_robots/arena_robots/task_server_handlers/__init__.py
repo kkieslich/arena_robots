@@ -48,6 +48,10 @@ class NativeGoals:
             native_handle.cancel_goal_async()
         return CancelResponse.ACCEPT
 
+    def others(self, goal_handle: ServerGoalHandle) -> list[ClientGoalHandle]:
+        key = bytes(goal_handle.goal_id.uuid)
+        return [native_handle for uuid, native_handle in self._goals.items() if uuid != key]
+
     @contextlib.contextmanager
     def tracking(self, goal_handle: ServerGoalHandle, native_handle: ClientGoalHandle) -> Iterator[None]:
         key = bytes(goal_handle.goal_id.uuid)
@@ -77,5 +81,21 @@ async def _executor_sleep(node: Node, seconds: float, *, wall: bool = False) -> 
     timer = node.create_timer(seconds, _fire, clock=Clock() if wall else None)
     try:
         await fut
+    finally:
+        node.destroy_timer(timer)
+
+
+async def _await_within(node: Node, future: Future, seconds: float) -> None:
+    """Wait for `future`, giving up after `seconds` of wall time."""
+    gate: Future = Future()
+
+    def _release(*_args: object) -> None:
+        if not gate.done():
+            gate.set_result(None)
+
+    future.add_done_callback(_release)
+    timer = node.create_timer(seconds, _release, clock=Clock())
+    try:
+        await gate
     finally:
         node.destroy_timer(timer)

@@ -25,7 +25,9 @@ what differs from the defaults. Two common shapes:
   forwards to an external policy process.
 
 Robot kinematics, frames, and namespace reach the config through `${...}` substitutions
-the adapter emits (see `Nav2KinematicsDerivedYAML` / `Nav2CollisionDerivedYAML`).
+the adapter emits (see `Nav2KinematicsDerivedYAML` / `Nav2CollisionDerivedYAML`):
+velocity and acceleration limits, `${motion_model}` (`Omni`, `Ackermann` or `DiffDrive`)
+and, for a car-like robot only, `${turning_radius}`.
 
 ### `controller.launch.py` (optional side-car)
 

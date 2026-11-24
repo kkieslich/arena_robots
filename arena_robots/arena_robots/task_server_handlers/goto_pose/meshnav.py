@@ -14,9 +14,9 @@ from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executor_sleep
 
 if TYPE_CHECKING:
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.server import ServerGoalHandle
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.mobile.meshnav import MeshNavBringup
@@ -34,7 +34,7 @@ def _translate_outcome(status: int, result: MoveBase.Result) -> tuple[int, str]:
 
 
 class GotoPoseHandlerMeshNav(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose.Result]):
-    def __init__(self, bringup: MeshNavBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: MeshNavBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node

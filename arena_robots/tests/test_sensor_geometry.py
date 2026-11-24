@@ -208,4 +208,5 @@ def test_component_on_a_prefixed_chassis_hangs_off_its_prefixed_parent(component
         pytest.skip(f"no robot with a frame prefix mounts {component}")
     robot, mount = host
     require_installed(robot)
+    require_installed(component)
     assert _dangling_parents(render_urdf(RobotIdentifier(robot).resolve_sync(), {part: [RequestPart(variant=variant, mount=mount)]})) == []

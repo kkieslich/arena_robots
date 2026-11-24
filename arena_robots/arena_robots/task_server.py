@@ -6,8 +6,8 @@ import rclpy
 import tf2_ros
 from arena_rclpy_mixins.params import Param, declare
 from arena_rclpy_mixins.spin import spin_node
+from arena_rclpy_mixins.Time import TimeNode
 from rclpy.action import ActionServer
-from rclpy.node import Node
 from rclpy.parameter import Parameter
 
 from arena_robots.assembly import RequestPart
@@ -16,7 +16,7 @@ from arena_robots.Robot import RobotIdentifier
 from arena_robots.task_kinds import action_type, endpoint
 
 
-class TaskServerNode(Node):
+class TaskServerNode(TimeNode):
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
         super().__init__("task_server", parameter_overrides=parameter_overrides)
 

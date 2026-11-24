@@ -63,6 +63,23 @@ class TestMobileSpec:
         assert spec.radius == pytest.approx(0.3)
         assert spec.is_holonomic is True
 
+    def test_min_turning_radius_defaults_to_turning_in_place(self, caps_dir):
+        from arena_robots.caps import MobileSpec
+
+        assert MobileSpec(path=caps_dir / "mobile.yaml", raw={}).min_turning_radius == 0.0
+
+    def test_min_turning_radius_reads_the_value(self, caps_dir):
+        from arena_robots.caps import MobileSpec
+
+        assert MobileSpec(path=caps_dir / "mobile.yaml", raw={"min_turning_radius": 0.74}).min_turning_radius == pytest.approx(0.74)
+
+    @pytest.mark.parametrize("raw", [{"min_turning_radius": -0.1}, {"min_turning_radius": "0.7"}, {"min_turning_radius": float("inf")}, {"min_turning_radius": 0.7, "is_holonomic": True}])
+    def test_min_turning_radius_rejects_invalid_values(self, caps_dir, raw):
+        from arena_robots.caps import MobileSpec
+
+        with pytest.raises(ValueError, match="min_turning_radius"):
+            MobileSpec(path=caps_dir / "mobile.yaml", raw=raw).min_turning_radius
+
     def test_climbs_defaults_to_no_stair_kind(self, caps_dir):
         from arena_robots.caps import MobileSpec
 

@@ -9,12 +9,10 @@ import numpy as np
 import rclpy
 from arena_rclpy_mixins.params import Param, Range, declare
 from arena_rclpy_mixins.spin import spin_node
+from arena_rclpy_mixins.Time import Time, TimeNode
 from geometry_msgs.msg import TransformStamped
-from rclpy.duration import Duration
-from rclpy.node import Node
 from rclpy.parameter import Parameter
 from rclpy.qos import qos_profile_sensor_data
-from rclpy.time import Time
 from sensor_msgs.msg import LaserScan, PointCloud2, PointField
 from std_msgs.msg import Header
 from tf2_ros import Buffer, TransformException, TransformListener
@@ -72,7 +70,7 @@ def transform_matrix(transform: TransformStamped) -> np.ndarray:
     return matrix
 
 
-class MeshNavObstacles(Node):
+class MeshNavObstacles(TimeNode):
     """Publishes the merged obstacle points of the robot's range sensors in the odom frame, ground the nav mesh explains dropped."""
 
     def __init__(self, *, parameter_overrides: list[Parameter] | None = None) -> None:
@@ -90,7 +88,7 @@ class MeshNavObstacles(Node):
             obstacle_range=declare(self, Param[float]("obstacle_range", 9.0, "Maximum range of the sensor points kept in m.", constraint=Range(lo=0.0, lo_open=True))).value,
             self_radius=declare(self, Param[float]("self_radius", 0.3, "Radius around the robot whose points are dropped in m.", constraint=Range(lo=0.0))).value,
         )
-        self._decay = Duration(seconds=declare(self, Param[float]("obstacle_decay", 1.0, "Seconds an obstacle observation is kept after its last update.", constraint=Range(lo=0.0))).value)
+        self._decay = Time.from_float(declare(self, Param[float]("obstacle_decay", 1.0, "Seconds an obstacle observation is kept after its last update.", constraint=Range(lo=0.0))).value)
         scans = list(declare(self, Param[list[str]]("laserscan_topics", [], "Laserscan topics merged into the obstacle points.", type_=Parameter.Type.STRING_ARRAY)).value)
         clouds = list(declare(self, Param[list[str]]("pointcloud_topics", [], "Pointcloud topics merged into the obstacle points.", type_=Parameter.Type.STRING_ARRAY)).value)
         rate = declare(self, Param[float]("publish_rate", 10.0, "Publish rate of the merged obstacle points in Hz.", constraint=Range(lo=0.0, lo_open=True))).value
@@ -120,11 +118,12 @@ class MeshNavObstacles(Node):
     def _process(self, topic: str) -> None:
         msg = self._pending[topic]
         stamp = Time.from_msg(msg.header.stamp)
+        lookup_stamp = stamp.to_rclpy()
         try:
-            sensor_in_base = transform_matrix(self._tf.lookup_transform(self._base_frame, msg.header.frame_id, stamp))
-            base_in_odom = transform_matrix(self._tf.lookup_transform(self._odom_frame, self._base_frame, stamp))
+            sensor_in_base = transform_matrix(self._tf.lookup_transform(self._base_frame, msg.header.frame_id, lookup_stamp))
+            base_in_odom = transform_matrix(self._tf.lookup_transform(self._odom_frame, self._base_frame, lookup_stamp))
         except TransformException:
-            if self.get_clock().now() - stamp > self._decay:
+            if self.sim_time - stamp > self._decay:
                 del self._pending[topic]
             return
         del self._pending[topic]
@@ -133,7 +132,7 @@ class MeshNavObstacles(Node):
 
     def merged(self) -> np.ndarray:
         """The obstacle points of every sensor's latest scan younger than the decay time."""
-        now = self.get_clock().now()
+        now = self.sim_time
         fresh = [points for stamp, points in self._latest.values() if now - stamp <= self._decay]
         return np.concatenate(fresh) if fresh else np.zeros((0, 3))
 
@@ -144,7 +143,7 @@ class MeshNavObstacles(Node):
         if not len(points) and not self._published:
             return
         self._published = bool(len(points))
-        self._publisher.publish(cloud_message(Header(stamp=self.get_clock().now().to_msg(), frame_id=self._odom_frame), points))
+        self._publisher.publish(cloud_message(Header(stamp=self.sim_time.to_msg(), frame_id=self._odom_frame), points))
 
 
 def main() -> None:

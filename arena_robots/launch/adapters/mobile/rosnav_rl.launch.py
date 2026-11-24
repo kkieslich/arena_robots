@@ -18,7 +18,7 @@ def generate_launch_description():
     arena_env_node = LaunchArgument("arena_env_node", default_value="", description="Name of the env node whose map and services the robot uses.")
     agent = LaunchArgument("agent", description="Name of the DRL agent directory the controller loads weights from.")
     node_name = LaunchArgument("node_name", default_value="rosnav_rl_inference", description="Name of the DRL inference node.")
-    control_rate = LaunchArgument("control_rate", default_value="10.0", description="Control loop rate of the inference node in Hz.")
+    control_rate = LaunchArgument("control_rate", default_value="0.0", description="Control loop rate of the inference node in Hz, 0 for the rate the agent was trained at.")
     min_lookahead_dist = LaunchArgument("min_lookahead_dist", default_value="0.5", description="Minimum lookahead distance along the global plan in meters.")
     max_lookahead_dist = LaunchArgument("max_lookahead_dist", default_value="2.5", description="Maximum lookahead distance along the global plan in meters.")
     lookahead_time = LaunchArgument("lookahead_time", default_value="1.5", description="Lookahead time along the global plan in seconds.")

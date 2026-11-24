@@ -94,6 +94,7 @@ odom_frame: odom
 sensor_frame: base_scan
 radius: 0.5
 is_holonomic: false
+min_turning_radius: 0.0       # optional, m, default 0.0 (turns in place)
 climbs: [stairs]              # optional, default []
 
 footprint: [[0.5, 0.35], [0.5, -0.35], [-0.5, -0.35], [-0.5, 0.35]]
@@ -147,13 +148,28 @@ meshnav:                   # optional, meshnav-only wiring
 via `Nav2KinematicsDerivedYAML` substitution; controller YAMLs reference them
 as `${max_linear_vel:-default}` etc. To override a specific controller without
 touching `mobile.yaml`, replace the substitution with a literal value in that
-controller YAML.
+controller YAML. The same substitution emits `${motion_model}`, MPPI's motion
+model (`Omni` when `is_holonomic`, `Ackermann` when `min_turning_radius` is
+above 0, else `DiffDrive`), and for a car-like base `${turning_radius}`, the
+`min_turning_radius` that MPPI's Ackermann constraint and the Smac Hybrid
+planner turn at.
 
 `planar` is the body response `sim:=flatsim` drives the robot with, the same keys
 for every robot: per-axis velocity bounds, acceleration and gain, a first-order
 `lag`, a `traction` cap on planar acceleration, the `pivot` x the body turns
 about and the command `timeout`. It is the drive's envelope, not the planner's,
 so it can exceed `velocity_limits`.
+
+`min_turning_radius` is the smallest radius in metres the base can turn on,
+measured at `base_link`. Leave it out (0.0) for a base that turns in place:
+differential, skid-steer and omni drives. Set it for a car-like (Ackermann)
+base to `wheelbase / tan(max steering angle)`, with the steering angle of the
+bicycle model, not of the inner wheel. A base with a radius above 0 cannot
+spin, so its turn rate is bounded by `|forward speed| / min_turning_radius`.
+It cannot be combined with `is_holonomic: true`. `f1tenth` is the car-like
+robot. The nav2 adapter gives such a base the `default_no_spin` behavior tree
+in place of `default`, whose spin recovery it cannot drive, unless
+`robot.mobile.inter_planner` names another tree.
 
 `climbs` lists the world stair kinds (`stairs`, `escalator`) the base can
 drive through. Cross-level routing sends the robot through the boarding half of
@@ -364,6 +380,7 @@ mast) stays inline in the robot's own xacro; it gets no mount or component entry
 | `urdf/<name>.urdf.xacro` | robot description; mesh refs use `package://arena_robots/robots/<name>/meshes/…` or a fixed upstream package (`package://jackal_description/…`) |
 | `meshes/` | STL/DAE/OBJ files, normally a git submodule under `github.com/arena-robots/<name>` (opt-in via `arena feature robots add <name>`) |
 | `launch/` | robot-specific launch files (e.g. nav2 overrides) |
+| `launch/bringup.launch.py` | per-robot sidecar (a legged robot's gait controller, `cmd_vel` to joint trajectories), included by `RobotManager` once per spawn inside the robot namespace in every simulator, gated only on the file existing, with launch arguments `base_frame` and `use_sim_time` |
 | `README.md` | free-form robot docs (upstream references, env vars, etc.) |
 
 ## Meshes

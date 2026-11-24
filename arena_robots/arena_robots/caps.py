@@ -351,6 +351,16 @@ class MobileSpec(CapConfig):
         return bool(self.raw.get('is_holonomic', False))
 
     @property
+    def min_turning_radius(self) -> float:
+        """Smallest radius in m the base can turn on, 0.0 for a base that turns in place."""
+        v = self.raw.get('min_turning_radius', 0.0)
+        if isinstance(v, bool) or not isinstance(v, (int, float)) or not 0.0 <= v < math.inf:
+            raise ValueError(f"{self.path}: 'min_turning_radius' must be a finite number >= 0; got {v!r}")
+        if v > 0.0 and self.is_holonomic:
+            raise ValueError(f"{self.path}: 'min_turning_radius' is {v!r} but 'is_holonomic' is true, a holonomic base turns in place")
+        return float(v)
+
+    @property
     def climbs(self) -> frozenset[str]:
         """Stairs kinds the base can drive through, a subset of CLIMBABLE."""
         v = self.raw.get('climbs') or []

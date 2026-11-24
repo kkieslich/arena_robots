@@ -1,0 +1,136 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- upstream ego_racecar.xacro -->
+  <xacro:property name="wheelbase" value="0.3302"/>
+  <xacro:property name="width" value="0.2032"/>
+  <xacro:property name="height" value="0.1"/>
+  <xacro:property name="ground_offset" value="0.04"/>
+  <xacro:property name="wheel_radius" value="0.0508"/>
+  <xacro:property name="wheel_length" value="0.0381"/>
+  <xacro:property name="wheel_y" value="${(wheel_length + width) / 2}"/>
+
+  <!-- f1tenth_gym vehicle parameters -->
+  <xacro:property name="s_max" value="0.4189"/>
+  <xacro:property name="sv_max" value="3.2"/>
+  <xacro:property name="v_max" value="20.0"/>
+  <xacro:property name="a_max" value="9.51"/>
+  <xacro:property name="total_mass" value="3.74"/>
+  <xacro:property name="body_length" value="0.58"/>
+
+  <!-- inner and outer wheel angles ackermann_steering_controller commands at s_max -->
+  <xacro:property name="inner_steer" value="${atan2(2 * wheelbase * sin(s_max), 2 * wheelbase * cos(s_max) - 2 * wheel_y * sin(s_max))}"/>
+  <xacro:property name="outer_steer" value="${atan2(2 * wheelbase * sin(s_max), 2 * wheelbase * cos(s_max) + 2 * wheel_y * sin(s_max))}"/>
+  <xacro:property name="max_wheel_speed" value="${v_max / wheel_radius}"/>
+  <!-- each rear wheel delivers half of total_mass * a_max -->
+  <xacro:property name="max_wheel_torque" value="${total_mass * a_max / 2 * wheel_radius}"/>
+
+  <xacro:property name="wheel_mass" value="0.1"/>
+  <xacro:property name="knuckle_mass" value="0.02"/>
+  <!-- mass of the hokuyo_ust20lx component -->
+  <xacro:property name="lidar_mass" value="0.13"/>
+  <xacro:property name="chassis_mass" value="${total_mass - 4 * wheel_mass - 2 * knuckle_mass - lidar_mass}"/>
+
+  <xacro:macro name="f1tenth_wheel" params="name">
+    <link name="${name}_wheel">
+      <visual>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
+        </geometry>
+        <material name="black"/>
+      </visual>
+      <collision>
+        <origin rpy="${pi/2} 0 0"/>
+        <geometry>
+          <cylinder radius="${wheel_radius}" length="${wheel_length}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <origin rpy="${pi/2} 0 0"/>
+        <mass value="${wheel_mass}"/>
+        <xacro:solid_cylinder_inertia m="${wheel_mass}" r="${wheel_radius}" h="${wheel_length}"/>
+      </inertial>
+    </link>
+  </xacro:macro>
+
+  <xacro:macro name="f1tenth_rear_wheel" params="side y">
+    <joint name="rear_${side}_wheel_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="rear_${side}_wheel"/>
+      <origin xyz="0 ${y} ${wheel_radius}"/>
+      <axis xyz="0 1 0"/>
+      <limit effort="${max_wheel_torque}" velocity="${max_wheel_speed}"/>
+    </joint>
+    <xacro:f1tenth_wheel name="rear_${side}"/>
+  </xacro:macro>
+
+  <xacro:macro name="f1tenth_front_wheel" params="side y lower upper">
+    <joint name="front_${side}_steering_joint" type="revolute">
+      <parent link="base_link"/>
+      <child link="front_${side}_hinge"/>
+      <origin xyz="${wheelbase} ${y} ${wheel_radius}"/>
+      <axis xyz="0 0 1"/>
+      <limit lower="${lower}" upper="${upper}" effort="10.0" velocity="${sv_max}"/>
+    </joint>
+
+    <link name="front_${side}_hinge">
+      <inertial>
+        <mass value="${knuckle_mass}"/>
+        <xacro:solid_sphere_inertia m="${knuckle_mass}" r="0.01"/>
+      </inertial>
+    </link>
+
+    <joint name="front_${side}_wheel_joint" type="continuous">
+      <parent link="front_${side}_hinge"/>
+      <child link="front_${side}_wheel"/>
+      <axis xyz="0 1 0"/>
+      <!-- arena_mujoco floors a joint's armature at effort / 50, near the wheel's own inertia here so the passive wheel rolls -->
+      <limit effort="0.005" velocity="${max_wheel_speed}"/>
+    </joint>
+    <xacro:f1tenth_wheel name="front_${side}"/>
+  </xacro:macro>
+
+  <xacro:macro name="f1tenth_body">
+    <material name="black">
+      <color rgba="0.2 0.2 0.2 1.0"/>
+    </material>
+    <material name="blue">
+      <color rgba="0.3 0.57 1.0 1.0"/>
+    </material>
+
+    <!-- rear axle centre on the ground, the reference point of the steering controller -->
+    <link name="base_link"/>
+
+    <joint name="chassis_joint" type="fixed">
+      <parent link="base_link"/>
+      <child link="chassis_link"/>
+      <origin xyz="${wheelbase/2} 0 ${ground_offset + height/2}"/>
+    </joint>
+
+    <link name="chassis_link">
+      <visual>
+        <geometry>
+          <box size="${body_length} ${width} ${height}"/>
+        </geometry>
+        <material name="blue"/>
+      </visual>
+      <collision>
+        <geometry>
+          <box size="${body_length} ${width} ${height}"/>
+        </geometry>
+      </collision>
+      <inertial>
+        <mass value="${chassis_mass}"/>
+        <xacro:solid_cuboid_inertia m="${chassis_mass}" w="${body_length}" h="${width}" d="${height}"/>
+      </inertial>
+    </link>
+
+    <xacro:f1tenth_rear_wheel side="left" y="${wheel_y}"/>
+    <xacro:f1tenth_rear_wheel side="right" y="${-wheel_y}"/>
+    <!-- each wheel is the inner one when turning to its own side -->
+    <xacro:f1tenth_front_wheel side="left" y="${wheel_y}" lower="${-outer_steer}" upper="${inner_steer}"/>
+    <xacro:f1tenth_front_wheel side="right" y="${-wheel_y}" lower="${-inner_steer}" upper="${outer_steer}"/>
+  </xacro:macro>
+
+</robot>

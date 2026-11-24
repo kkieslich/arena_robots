@@ -40,11 +40,11 @@ from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executo
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.client import ClientGoalHandle
     from rclpy.action.server import ServerGoalHandle
     from rclpy.client import Client
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.arm.moveit import MoveItArmBringup
@@ -191,7 +191,7 @@ def _translate_moveit_status(code: int) -> tuple[int, str]:
 
 
 class ReachPoseHandlerMoveIt(TaskHandler[ReachPose.Goal, ReachPose.Feedback, ReachPose.Result]):
-    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node

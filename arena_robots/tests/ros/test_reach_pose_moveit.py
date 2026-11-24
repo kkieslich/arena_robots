@@ -14,6 +14,7 @@ import yaml
 
 rclpy = pytest.importorskip("rclpy")
 
+from arena_rclpy_mixins.Time import TimeNode
 from arena_robots_msgs.action import ReachPose
 from geometry_msgs.msg import Pose
 from control_msgs.msg import JointTrajectoryControllerState
@@ -77,7 +78,7 @@ def rig(tmp_path: Path) -> Iterator[tuple[object, ActionClient, ArmSpec]]:
     if owned:
         rclpy.init()
     ns = f"/reach_pose_{uuid.uuid4().hex[:8]}"
-    node = rclpy.create_node("reach_pose_moveit", namespace=ns)
+    node = TimeNode("reach_pose_moveit", namespace=ns)
     bringup = MoveItArmBringup(RobotView(_robot_dir(tmp_path)), ns)
     handler = ReachPoseHandlerMoveIt(bringup, tf_buffer=Buffer(), node=node)
     group = ReentrantCallbackGroup()
@@ -429,7 +430,7 @@ def moveit_rig(tmp_path: Path) -> Iterator[tuple[ActionClient, _FakeMoveIt]]:
     if owned:
         rclpy.init()
     ns = f"/reach_pose_{uuid.uuid4().hex[:8]}"
-    node = rclpy.create_node("reach_pose_moveit", namespace=ns)
+    node = TimeNode("reach_pose_moveit", namespace=ns)
     peer = rclpy.create_node("move_group_fake", namespace=ns)
     bringup = MoveItArmBringup(RobotView(_robot_dir(tmp_path)), ns)
     handler = ReachPoseHandlerMoveIt(bringup, tf_buffer=Buffer(), node=node)

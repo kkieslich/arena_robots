@@ -15,7 +15,7 @@ planner_plugins_dict:
     analytic_expansion_max_length: 3.0
     analytic_expansion_max_cost: 200.0
     analytic_expansion_max_cost_override: false
-    minimum_turning_radius: 0.40
+    minimum_turning_radius: ${turning_radius:-0.40}
     reverse_penalty: 2.0
     change_penalty: 0.0
     non_straight_penalty: 1.2

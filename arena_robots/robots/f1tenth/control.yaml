@@ -1,0 +1,40 @@
+controller_manager:
+  ros__parameters:
+    update_rate: 50  # Hz
+    use_sim_time: true
+
+    joint_state_broadcaster:
+      type: joint_state_broadcaster/JointStateBroadcaster
+
+    f1tenth_steering_controller:
+      type: ackermann_steering_controller/AckermannSteeringController
+
+joint_state_broadcaster:
+  ros__parameters:
+    use_sim_time: true
+    publish_rate: 50.0
+
+f1tenth_steering_controller:
+  ros__parameters:
+    use_sim_time: true
+
+    # order is right, left (steering_controllers_library)
+    traction_joints_names: [rear_right_wheel_joint, rear_left_wheel_joint]
+    steering_joints_names: [front_right_steering_joint, front_left_steering_joint]
+
+    # urdf/f1tenth_body.urdf.xacro
+    wheelbase: 0.3302
+    traction_track_width: 0.2413
+    steering_track_width: 0.2413
+    traction_wheels_radius: 0.0508
+
+    reference_timeout: 0.5  # s without a command before the car stops
+    open_loop: false
+    position_feedback: false
+    velocity_rolling_window_size: 10
+
+    base_frame_id: base_link
+    odom_frame_id: odom
+    enable_odom_tf: false  # the simulator publishes odom -> base_link
+    pose_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]
+    twist_covariance_diagonal: [0.001, 0.001, 1000000.0, 1000000.0, 1000000.0, 0.03]

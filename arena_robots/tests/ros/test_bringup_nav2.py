@@ -20,6 +20,7 @@ ROSNAV_RL_SIDECAR = Path(__file__).resolve().parents[2] / "config" / "nav2" / "c
 def _make_mock_robot(name: str = "test_robot") -> object:
     mock_robot = MagicMock()
     mock_robot.name = name
+    mock_robot.caps.mobile.min_turning_radius = 0.0
     return mock_robot
 
 
@@ -102,6 +103,21 @@ class TestNav2LaunchActions:
         actions = b._launch_actions(inter_planner="smac")
         args = dict(actions[0].launch_arguments)
         assert args["inter_planner"] == "smac"
+
+    @pytest.mark.parametrize(("robot", "inter_planner"), [("jackal", "default"), ("f1tenth", "default_no_spin")])
+    def test_default_inter_planner_spins_only_for_a_robot_that_turns_in_place(self, robot: str, inter_planner: str) -> None:
+        from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+        from arena_robots.Robot import RobotIdentifier
+
+        bringup = Nav2Bringup(robot=RobotIdentifier(robot).resolve_sync(), namespace="/robot1")
+        assert dict(bringup._launch_actions()[0].launch_arguments)["inter_planner"] == inter_planner
+
+    def test_explicit_inter_planner_is_kept_for_a_car_like_robot(self) -> None:
+        from arena_robots.bringup.mobile.nav2 import Nav2Bringup
+        from arena_robots.Robot import RobotIdentifier
+
+        bringup = Nav2Bringup(robot=RobotIdentifier("f1tenth").resolve_sync(), namespace="/robot1")
+        assert dict(bringup._launch_actions(inter_planner="navigate_w_replanning_time")[0].launch_arguments)["inter_planner"] == "navigate_w_replanning_time"
 
     def test_extra_kwargs_ignored(self):
         b = self._make_bringup()

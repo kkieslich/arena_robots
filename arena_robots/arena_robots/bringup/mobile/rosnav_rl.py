@@ -57,7 +57,7 @@ class RosnavRlBringup(Bringup):
         agent_name = agent or str(cfg.get("agent", ""))
         if not agent_name and not train_mode:
             raise ValueError(f"rosnav_rl bringup for '{self.robot.name}' missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
-        rate = float(cfg.get("control_rate", 10.0)) if control_rate is None else float(control_rate)
+        rate = float(cfg.get("control_rate", 0.0)) if control_rate is None else float(control_rate)
         lo = float(cfg.get("min_lookahead_dist", 0.5)) if min_lookahead_dist is None else float(min_lookahead_dist)
         hi = float(cfg.get("max_lookahead_dist", 2.5)) if max_lookahead_dist is None else float(max_lookahead_dist)
         lt = float(cfg.get("lookahead_time", 1.5)) if lookahead_time is None else float(lookahead_time)

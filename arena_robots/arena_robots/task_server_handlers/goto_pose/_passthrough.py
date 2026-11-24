@@ -12,8 +12,8 @@ from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import TaskHandler, _executor_sleep
 
 if TYPE_CHECKING:
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action.server import ServerGoalHandle
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.mobile.drl import DrlBringup
@@ -29,7 +29,7 @@ _PASSTHROUGH_BEAT_PERIOD = 0.25
 class _PassthroughHandler(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose.Result]):
     """Publish the goal and succeed instantly, for bringups where no stack drives toward it."""
 
-    def __init__(self, bringup: NoneBringup | ExternalBringup | RosnavRlBringup | DrlBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: NoneBringup | ExternalBringup | RosnavRlBringup | DrlBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node
@@ -53,7 +53,7 @@ class _GoalWindowHandler(_PassthroughHandler):
 
     _PROXY_BEAT: ClassVar[bool] = True
 
-    def __init__(self, bringup: ExternalBringup | RosnavRlBringup | DrlBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: ExternalBringup | RosnavRlBringup | DrlBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         super().__init__(bringup, tf_buffer=tf_buffer, node=node)
         self._base_frame = bringup.frame + bringup.robot.model_params.base_frame
         self._active_token: object | None = None

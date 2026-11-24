@@ -17,6 +17,9 @@ from arena_robots.Sensor import SensorSpec, SensorType
 from arena_robots.sensor_geometry import sensor_geometry
 from arena_robots.task_kinds import TaskKind
 
+DEFAULT_INTER_PLANNER = "default"
+NO_SPIN_INTER_PLANNER = "default_no_spin"  # the default tree of a base that cannot turn in place
+
 
 def _load_goto_pose_nav2() -> type:
     from arena_robots.task_server_handlers.goto_pose.nav2 import GotoPoseHandlerNav2
@@ -52,7 +55,7 @@ class Nav2Bringup(Bringup):
         frame: str = "",
         global_planner: str = "navfn",
         local_planner: str = "regulated_pure_pursuit",
-        inter_planner: str = "default",
+        inter_planner: str = DEFAULT_INTER_PLANNER,
         train_mode: bool = False,
         arena_env_node: str = "",
         env_namespace: str = "",
@@ -65,6 +68,8 @@ class Nav2Bringup(Bringup):
         agent_name = agent or str(self.robot.caps.mobile.sub("rosnav_rl").get("agent", ""))
         if local_planner == "rosnav_rl" and not agent_name:
             raise ValueError(f"nav2 bringup for '{self.robot.name}' with local_planner=rosnav_rl missing required 'agent': set caps/mobile.yaml 'rosnav_rl.agent' or pass robot.mobile.agent:=<name>")
+        if inter_planner == DEFAULT_INTER_PLANNER and self.robot.caps.mobile.min_turning_radius > 0.0:
+            inter_planner = NO_SPIN_INTER_PLANNER
         launch_file = PathJoinSubstitution(
             [
                 FindPackageShare("arena_robots"),

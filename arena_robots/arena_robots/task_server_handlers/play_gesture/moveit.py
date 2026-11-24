@@ -17,9 +17,9 @@ from arena_robots.lockstep_beat import LockstepBeat
 from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executor_sleep
 
 if TYPE_CHECKING:
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.server import ServerGoalHandle
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.arm.moveit import MoveItArmBringup
@@ -107,7 +107,7 @@ def _build_trajectory(gesture: GestureSpec, arm: ArmSpec) -> JointTrajectory:
 
 
 class PlayGestureHandlerMoveIt(TaskHandler[PlayGesture.Goal, PlayGesture.Feedback, PlayGesture.Result]):
-    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: MoveItArmBringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         del tf_buffer
         self._bringup = bringup
         self._node = node

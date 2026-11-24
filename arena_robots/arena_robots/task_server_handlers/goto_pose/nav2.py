@@ -14,13 +14,13 @@ from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.action import ActionClient
 
 from arena_robots.lockstep_beat import LockstepBeat
-from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _executor_sleep
+from arena_robots.task_server_handlers import NativeGoals, TaskHandler, _await_within, _executor_sleep
 
 if TYPE_CHECKING:
+    from arena_rclpy_mixins.Time import TimeNode
     from rclpy.action import CancelResponse
     from rclpy.action.server import ServerGoalHandle
     from rclpy.client import Client
-    from rclpy.node import Node
     from tf2_ros import Buffer
 
     from arena_robots.bringup.mobile.nav2 import Nav2Bringup
@@ -35,6 +35,7 @@ _SETTLE_POLLS = 20
 _SETTLE_STEP_M = 0.001
 _SETTLE_STEP_RAD = 0.002
 _PRECISE_RESENDS = 5
+_NAV2_PREEMPT_TIMEOUT_SEC = 10.0
 
 
 def _yaw(q: Quaternion) -> float:
@@ -50,7 +51,7 @@ def _translate_nav2_status(nav2_status: int) -> tuple[int, str]:
 
 
 class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose.Result]):
-    def __init__(self, bringup: Nav2Bringup, *, tf_buffer: Buffer, node: Node) -> None:
+    def __init__(self, bringup: Nav2Bringup, *, tf_buffer: Buffer, node: TimeNode) -> None:
         self._bringup = bringup
         self._tf_buffer = tf_buffer
         self._node = node
@@ -170,6 +171,12 @@ class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose
         aligned = goal.yaw_tolerance <= 0.0 or abs(math.remainder(pose[2] - yaw, math.tau)) <= goal.yaw_tolerance
         return near and aligned
 
+    async def _await_preempted(self, goal_handle: ServerGoalHandle) -> None:
+        """Cancel the nav2 goals of the other server goals and wait for them to end."""
+        for native_handle in self._nav2_goals.others(goal_handle):
+            native_handle.cancel_goal_async()
+            await _await_within(self._node, native_handle.get_result_async(), _NAV2_PREEMPT_TIMEOUT_SEC)
+
     async def _dispatch(self, goal_handle: ServerGoalHandle, nav2_goal: NavigateToPose.Goal, result: GotoPose.Result, *, precise: bool = False) -> GotoPose.Result:
         def _on_nav2_feedback(fb_msg: NavigateToPose.Impl.FeedbackMessage) -> None:
             fb = fb_msg.feedback
@@ -192,6 +199,7 @@ class GotoPoseHandlerNav2(TaskHandler[GotoPose.Goal, GotoPose.Feedback, GotoPose
                 result.reason = "goal canceled"
                 return result
 
+            await self._await_preempted(goal_handle)
             send_future = self._native_client.send_goal_async(nav2_goal, feedback_callback=_on_nav2_feedback)
             nav2_goal_handle = await send_future
 

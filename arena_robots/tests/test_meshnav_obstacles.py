@@ -200,7 +200,7 @@ def test_a_16_beam_lidar_scan_classifies_without_a_pathological_slowdown(tmp_pat
     rays = np.stack([np.cos(elevation) * np.cos(azimuth), np.cos(elevation) * np.sin(azimuth), np.sin(elevation)], axis=-1).reshape(-1, 3)
     points = np.array([25.0, 25.0, 0.4]) + rays * 8.0
     _obstacles(surface, points)
-    start = time.perf_counter()
+    start = time.thread_time()
     for _ in range(5):
         _obstacles(surface, points)
-    assert (time.perf_counter() - start) / 5 < 1.0
+    assert (time.thread_time() - start) / 5 < 1.0

@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import numpy as np
 import pytest
+import rclpy
+from arena_rclpy_mixins.Time import Time
 from arena_simulation_setup.shared.navmesh import NavMesh
 from geometry_msgs.msg import TransformStamped
-from rclpy.duration import Duration
 from rclpy.parameter import Parameter
+from rosgraph_msgs.msg import Clock
 from sensor_msgs.msg import LaserScan, PointCloud2
 from std_msgs.msg import Header
 
@@ -32,6 +35,17 @@ def _transform(parent: str, child: str, z: float, stamp) -> TransformStamped:
     return transform
 
 
+def _set_sim_time(node, seconds: float) -> None:
+    publisher = node.create_publisher(Clock, "/clock", 10)
+    target = Time.from_float(seconds)
+    deadline = time.monotonic() + 10.0
+    while node.sim_time != target:
+        assert time.monotonic() < deadline, "sim time never reached the node"
+        publisher.publish(Clock(clock=target.to_msg()))
+        rclpy.spin_once(node, timeout_sec=0.05)
+    node.destroy_publisher(publisher)
+
+
 @pytest.fixture()
 def node(tmp_path: Path):
     from arena_robots.meshnav_obstacles_node import MeshNavObstacles
@@ -47,7 +61,8 @@ def node(tmp_path: Path):
             Parameter("pointcloud_topics", value=["points"]),
         ]
     )
-    stamp = node.get_clock().now().to_msg()
+    _set_sim_time(node, 10.0)
+    stamp = node.sim_time.to_msg()
     node.tf_buffer.set_transform_static(_transform("odom", "base", 0.0, stamp), "test")
     node.tf_buffer.set_transform_static(_transform("base", "lidar", 0.3, stamp), "test")
     try:
@@ -83,7 +98,7 @@ def test_scans_become_points_within_their_valid_range():
 
 
 def test_scans_and_clouds_of_every_sensor_merge_into_odom_obstacles(node):
-    stamp = node.get_clock().now().to_msg()
+    stamp = node.sim_time.to_msg()
     node.receive("scan", _scan(stamp))
     node.receive("points", _cloud(np.array([[0.0, -3.0, 0.0], [0.0, 2.0, -0.3], [0.1, 0.0, 0.0]]), stamp))
     merged = node.merged()
@@ -91,14 +106,14 @@ def test_scans_and_clouds_of_every_sensor_merge_into_odom_obstacles(node):
 
 
 def test_a_sensor_s_obstacles_decay_after_the_decay_time(node):
-    now = node.get_clock().now()
-    node.receive("scan", _scan((now - Duration(seconds=2.0)).to_msg()))
+    now = node.sim_time
+    node.receive("scan", _scan((now - Time.from_float(2.0)).to_msg()))
     node.receive("points", _cloud(np.array([[0.0, -3.0, 0.0]]), now.to_msg()))
     assert np.allclose(node.merged(), [[0.0, -3.0, 0.3]])
 
 
 def test_a_scan_waits_for_its_transform(node):
-    stamp = node.get_clock().now().to_msg()
+    stamp = node.sim_time.to_msg()
     scan = _scan(stamp)
     scan.header.frame_id = "camera"
     node.receive("scan", scan)

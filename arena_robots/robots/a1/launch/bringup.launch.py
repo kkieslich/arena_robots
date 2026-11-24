@@ -6,7 +6,7 @@ open-source gait controller that
 consumes the arena `cmd_vel` (Twist) and streams joint trajectories to the
 `joint_group_position_controller` brought up from `control.yaml`. Sim-agnostic:
 the same nodes drive the joints whether the controller_manager is backed by
-Gazebo's gz_ros2_control or Isaac's topic_bridge.
+Gazebo's gz_ros2_control or the MuJoCo or Isaac topic bridge.
 """
 
 import os
@@ -59,8 +59,8 @@ def generate_launch_description():
         remappings=[('cmd_vel/smooth', 'cmd_vel')],
     )
 
-    # Body-velocity / odometry estimate from the gait state. Publishes `odom` for
-    # nav; TF fusion (robot_localization EKF) is intentionally deferred to tuning.
+    # Body-velocity / odometry estimate from the gait state on `odom/raw`, the sim
+    # publishes the ground-truth `odom`.
     state_estimator = Node(
         package='champ_base',
         executable='state_estimation_node',

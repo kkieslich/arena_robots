@@ -1,0 +1,41 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://ros.org/wiki/xacro">
+
+  <xacro:arg name="namespace" default=""/>
+  <xacro:arg name="gazebo_controllers" default=""/>
+
+  <gazebo>
+    <plugin filename="libgz_ros2_control-system.so" name="gz_ros2_control::GazeboSimROS2ControlPlugin">
+      <parameters>$(arg gazebo_controllers)</parameters>
+      <ros>
+        <namespace>$(arg namespace)</namespace>
+      </ros>
+    </plugin>
+  </gazebo>
+
+  <gazebo>
+    <plugin
+      filename="gz-sim-pose-publisher-system"
+      name="gz::sim::systems::PosePublisher">
+      <publish_model_pose>true</publish_model_pose>
+      <publish_link_pose>false</publish_link_pose>
+      <publish_collision_pose>false</publish_collision_pose>
+      <publish_visual_pose>false</publish_visual_pose>
+      <publish_sensor_pose>false</publish_sensor_pose>
+      <publish_nested_model_pose>true</publish_nested_model_pose>
+      <use_pose_vector_msg>false</use_pose_vector_msg>
+    </plugin>
+  </gazebo>
+
+  <xacro:macro name="f1tenth_tyre" params="link">
+    <gazebo reference="${link}">
+      <mu1>1.0489</mu1>
+      <mu2>1.0489</mu2>
+    </gazebo>
+  </xacro:macro>
+  <xacro:f1tenth_tyre link="rear_left_wheel"/>
+  <xacro:f1tenth_tyre link="rear_right_wheel"/>
+  <xacro:f1tenth_tyre link="front_left_wheel"/>
+  <xacro:f1tenth_tyre link="front_right_wheel"/>
+
+</robot>

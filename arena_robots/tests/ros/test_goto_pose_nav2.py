@@ -127,6 +127,18 @@ class TestGotoPoseHandlerNav2Execute:
         assert nav2.received == 2
         assert wrapped.result.status == GotoPose.Result.STATUS_SUCCEEDED
 
+    def test_new_goal_waits_for_the_canceled_nav2_goal_to_end(self, goto_rig):
+        nav2 = goto_rig.nav2(hold=True, linger=0.5)
+        goto_rig.serve(_handler())
+        first = goto_rig.send()
+        until(lambda: nav2.received == 1, "first nav2 goal")
+        goto_rig.cancel(first)
+        second = goto_rig.send()
+        until(lambda: nav2.received == 2, "second nav2 goal")
+        assert nav2.events[:3] == ["start", "end", "start"]
+        nav2.holding = False
+        goto_rig.result(second)
+
     def test_nav2_feedback_is_translated(self, goto_rig):
         nav2 = goto_rig.nav2(hold=True, distance=1.5)
         goto_rig.serve(_handler())

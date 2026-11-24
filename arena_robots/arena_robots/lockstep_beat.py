@@ -11,13 +11,13 @@ from __future__ import annotations
 import contextlib
 import typing
 
+from arena_rclpy_mixins.Time import ClockEcho, TimeNode
 from arena_runtime_msgs.msg import LockstepChannel, LockstepHeartbeat, LockstepRegistration
 from arena_runtime_msgs.srv import LockstepRegister
 from builtin_interfaces.msg import Time as TimeMsg
 from rclpy.clock import Clock
 from rclpy.duration import Duration
 from rclpy.exceptions import InvalidHandle
-from rclpy.node import Node
 from rclpy.time import Time
 
 from arena_robots.task_server_handlers import _executor_sleep
@@ -31,7 +31,7 @@ _GRACE_S = 2.0
 class LockstepBeat:
     def __init__(
         self,
-        node: Node,
+        node: TimeNode,
         kind: str,
         *,
         grace_s: float | None = _GRACE_S,
@@ -44,7 +44,7 @@ class LockstepBeat:
         self._name = f"{kind}/{ns.rsplit('/', 1)[-1]}"
         self._topic = f"{ns}/lockstep/{kind}"
         self._env = ns.rsplit("/", 1)[0] or "/"
-        self._pub = node.create_publisher(LockstepHeartbeat, self._topic, 10)
+        self._pub: ClockEcho[LockstepHeartbeat] = ClockEcho(node, node.create_publisher(LockstepHeartbeat, self._topic, 10))
         self._client = node.create_client(LockstepRegister, _REGISTER_SERVICE)
         self._active = 0
         self._registered = False
@@ -97,7 +97,7 @@ class LockstepBeat:
         self._last_pulse = self._wall.now()
         self._starved = False
         msg = LockstepHeartbeat()
-        msg.header.stamp = stamp if stamp is not None else self._node.get_clock().now().to_msg()
+        msg.header.stamp = stamp if stamp is not None else self._node.sim_time.to_msg()
         self._pub.publish(msg)
 
     def _watchdog(self) -> None:
@@ -107,7 +107,7 @@ class LockstepBeat:
         silent = (wall - self._last_pulse).nanoseconds * 1e-9
         if silent < self._grace_s:
             return
-        sim_ns = self._node.get_clock().now().nanoseconds
+        sim_ns = self._node.sim_time.to_nanoseconds()
         if not self._starved:
             self._starved = True
             self._horizon_ns = sim_ns

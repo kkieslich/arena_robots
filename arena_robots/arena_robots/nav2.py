@@ -330,9 +330,17 @@ class Nav2SubBlockYAML(YAMLFileSubstitution):
         return tmp.name
 
 
+def motion_model(mobile: MobileSpec) -> str:
+    """MPPI motion model of a mobile base: Omni, Ackermann or DiffDrive."""
+    if mobile.is_holonomic:
+        return 'Omni'
+    return 'Ackermann' if mobile.min_turning_radius > 0.0 else 'DiffDrive'
+
+
 class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
     """Emit controller-agnostic velocity/acceleration keys from the top-level
-    ``velocity_limits``/``acceleration_limits`` in caps/mobile.yaml.
+    ``velocity_limits``/``acceleration_limits`` in caps/mobile.yaml, the
+    ``motion_model`` of the base and the ``turning_radius`` of a car-like one.
 
     These are the planner envelope (what nav2 may sample), not the hardware
     envelope (motor firmware / ``diff_drive_controller`` clip downstream).
@@ -351,7 +359,9 @@ class Nav2KinematicsDerivedYAML(YAMLFileSubstitution):
         path_str = launch.utilities.perform_substitutions(context, self._path)
         mobile = _load_mobile(path_str)
 
-        out: dict[str, typing.Any] = {}
+        out: dict[str, typing.Any] = {'motion_model': motion_model(mobile)}
+        if mobile.min_turning_radius > 0.0:
+            out['turning_radius'] = mobile.min_turning_radius
         vel = mobile.velocity_limits
         if vel is not None:
             out['min_linear_vel'] = vel.linear.min

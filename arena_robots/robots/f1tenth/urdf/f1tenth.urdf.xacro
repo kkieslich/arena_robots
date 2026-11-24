@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<!-- F1TENTH 1/10 race car, geometry from f1tenth_gym_ros ego_racecar.xacro (MIT), see ../README.md -->
+<robot name="f1tenth" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <xacro:arg name="namespace" default=""/>
+  <xacro:arg name="prefix" default=""/>
+  <xacro:arg name="sim_path" default=""/>
+  <xacro:arg name="gazebo_controllers" default=""/>
+  <xacro:arg name="gazebo_classic" default="false"/>
+  <xacro:arg name="gazebo_ignition" default="true"/>
+
+  <xacro:include filename="$(find arena_robots)/components/utils/inertia.urdf.xacro"/>
+  <xacro:include filename="$(find arena_robots)/robots/f1tenth/urdf/f1tenth_body.urdf.xacro"/>
+  <xacro:include filename="$(find arena_robots)/robots/f1tenth/urdf/base_hw/f1tenth.ros2_control.urdf"/>
+  <xacro:include filename="$(find arena_robots)/robots/f1tenth/urdf/f1tenth.gazebo"/>
+
+  <xacro:f1tenth_body/>
+  <xacro:f1tenth_base_hw_controller/>
+
+</robot>

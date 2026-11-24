@@ -22,7 +22,7 @@ controller_plugins_dict:
    transform_tolerance: 0.1
    temperature: 0.3
    gamma: 0.015
-   motion_model: "DiffDrive"
+   motion_model: ${motion_model:-DiffDrive}
    visualize: false
    reset_period: 1.0
    regenerate_noises: false
@@ -30,7 +30,7 @@ controller_plugins_dict:
      trajectory_step: 5
      time_step: 3
    AckermannConstraints:
-     min_turning_r: 0.2
+     min_turning_r: ${turning_radius:-0.2}
    critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]
    ConstraintCritic:
      enabled: true
