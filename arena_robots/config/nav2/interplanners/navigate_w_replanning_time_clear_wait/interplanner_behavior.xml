@@ -1,0 +1,33 @@
+<!--
+  navigate_w_replanning_time_clear with a controller recovery: when the controller fails in a way a recovery can help
+  (WouldAControllerRecoveryHelp: no valid trajectory, failed to make progress, patience exceeded, unknown), the robot
+  clears its local costmap and waits 1 s in place, then follows the path again; the goal is not aborted. Without it
+  every "No valid trajectories" (a walker inside the robot's inscribed cost) aborts the goal, and the robot stands
+  without commands until its goal is sent again. The clear drops cells marked by walkers who have moved on; the
+  sensors mark again at once what is still there, so the controller never drives into a walker that is present.
+  No spin or backup.
+-->
+
+<root BTCPP_format="4" main_tree_to_execute="MainTree">
+  <BehaviorTree ID="MainTree">
+    <PipelineSequence name="NavigateWithReplanning">
+      <RateController hz="4.0">
+        <RecoveryNode number_of_retries="1" name="ComputePathToPose">
+          <ComputePathToPose goal="{goal}" path="{path}" planner_id="GridBased" error_code_id="{compute_path_error_code}"/>
+          <Sequence>
+            <WouldAPlannerRecoveryHelp error_code="{compute_path_error_code}"/>
+            <ClearEntireCostmap name="ClearGlobalCostmap-Context" service_name="global_costmap/clear_entirely_global_costmap"/>
+          </Sequence>
+        </RecoveryNode>
+      </RateController>
+      <RecoveryNode number_of_retries="100000" name="FollowPath">
+        <FollowPath path="{path}" controller_id="FollowPath" error_code_id="{follow_path_error_code}"/>
+        <Sequence>
+          <WouldAControllerRecoveryHelp error_code="{follow_path_error_code}"/>
+          <ClearEntireCostmap name="ClearLocalCostmap-Context" service_name="local_costmap/clear_entirely_local_costmap"/>
+          <Wait wait_duration="1.0"/>
+        </Sequence>
+      </RecoveryNode>
+    </PipelineSequence>
+  </BehaviorTree>
+</root>
