@@ -136,3 +136,49 @@ def test_clear_tree_uses_only_known_nodes_and_ports():
     for node in _tree(CLEAR).iter():
         assert node.tag in ports, node.tag
         assert set(node.attrib) - {"name"} <= ports[node.tag], (node.tag, node.attrib)
+
+
+WAIT = INTERPLANNERS / "navigate_w_replanning_time_clear_wait"
+LOCAL_CLEAR_SERVICE = "local_costmap/clear_entirely_local_costmap"
+FOLLOW_ERROR_CODE = "{follow_path_error_code}"
+
+
+def test_wait_tree_is_the_clear_tree_with_a_controller_recovery_that_clears_the_local_costmap_and_waits():
+    top = _tree(WAIT)
+    rate, recovery = list(top)
+    assert _shape(rate) == _shape(_tree(CLEAR).find("RateController"))
+    assert recovery.tag == "RecoveryNode" and int(recovery.get("number_of_retries")) >= 1000
+    follow, recover = list(recovery)
+    assert follow.tag == "FollowPath" and follow.get("error_code_id") == FOLLOW_ERROR_CODE
+    gate, clear, wait = list(recover)
+    assert gate.tag == "WouldAControllerRecoveryHelp" and gate.get("error_code") == FOLLOW_ERROR_CODE
+    assert clear.tag == "ClearEntireCostmap" and clear.get("service_name") == LOCAL_CLEAR_SERVICE
+    assert wait.tag == "Wait" and 0.0 < float(wait.get("wait_duration")) <= 2.0
+    # without the recovery it is the clear tree
+    del follow.attrib["error_code_id"]
+    top.remove(recovery)
+    top.append(follow)
+    assert _shape(top) == _shape(_tree(CLEAR))
+
+
+def test_wait_tree_does_not_move_the_robot_in_a_recovery():
+    names = {node.tag for node in _tree(WAIT).iter()}
+    assert not names & {"Spin", "BackUp", "DriveOnHeading", "AssistedTeleop", "RoundRobin"}
+
+
+def test_wait_config_is_the_clear_config_with_its_own_tree():
+    wait, clear = _config(WAIT), _config(CLEAR)
+    assert {k: v for k, v in wait.items() if k != "default_nav_to_pose_bt_xml"} == {k: v for k, v in clear.items() if k != "default_nav_to_pose_bt_xml"}
+    assert {"nav2_wait_action_bt_node", "nav2_would_a_controller_recovery_help_condition_bt_node"} <= set(wait["plugin_lib_names"])
+    assert "follow_path_error_code" in wait["error_code_names"]
+
+
+def test_wait_tree_uses_only_known_nodes_and_ports():
+    share = _share("nav2_behavior_tree")
+    if share is None:
+        pytest.skip("nav2_behavior_tree not installed")
+    model = ET.parse(share / "nav2_tree_nodes.xml").getroot().find("TreeNodesModel")
+    ports = {node.get("ID"): {p.get("name") for p in node} for node in model} | BTCPP_BUILTINS
+    for node in _tree(WAIT).iter():
+        assert node.tag in ports, node.tag
+        assert set(node.attrib) - {"name"} <= ports[node.tag], (node.tag, node.attrib)
